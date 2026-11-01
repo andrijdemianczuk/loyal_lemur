@@ -67,12 +67,12 @@ class EDConfig:
     # intake chairs. "scheduled" opens it during fixed hours (typical static
     # policy); "dynamic" opens it whenever there are idle physicians and
     # waiting walk-ins (decision-support recommendation); "off" disables it.
-    intake_chairs: int = 3
+    intake_chairs: int = 2
     intake_mode: str = "scheduled"
     intake_hours: tuple[int, int] = (11, 21)
     # Internal results-waiting area shared by fast track and intake patients
     # whose workup outlasts their chair time. When full, those lanes stall.
-    results_area_capacity: int = 10
+    results_area_capacity: int = 8
     deteriorated_treatment_factor: float = 1.5
     slo_guard_min: float = 180  # AI policy: escalate walk-ins waiting this long
 
@@ -195,6 +195,8 @@ class ArmCounters:
     under_triaged: int = 0
     deteriorations: int = 0
     lwbs: int = 0
+    ai_late_applied: int = 0
+    ai_late_dropped: int = 0  # arrived after the patient was already seen or gone
     waits: list[WaitRecord] = field(default_factory=list)
 
 
@@ -296,20 +298,27 @@ class EDArm:
         row.lane = enc.lane
         if first:
             row.triaged_at = t
+        self._record_assessment(s, enc, decision, t, applied=True, previous=previous,
+                                first=first)
+
+    def _record_assessment(self, s: Session, enc: ActiveEncounter, decision: TriageDecision,
+                           t: datetime, *, applied: bool, previous: int | None = None,
+                           first: bool = False) -> None:
         s.add(TriageAssessment(
             encounter_id=enc.encounter_id, source=decision.source, assessed_at=t,
             ctas_level=decision.ctas, priority_score=decision.priority_score,
             rationale=decision.rationale, red_flags=decision.red_flags, model=decision.model,
             latency_ms=decision.latency_ms, input_tokens=decision.input_tokens,
-            output_tokens=decision.output_tokens,
+            output_tokens=decision.output_tokens, applied=applied,
         ))
         self._emit(EventType.TRIAGE_ASSESSED, t, {
             "encounter_id": str(enc.encounter_id),
             "patient_id": str(enc.patient_id),
             "source": decision.source,
             "ctas": decision.ctas,
-            "previous_ctas": previous,
+            "previous_ctas": previous if applied else enc.assigned_ctas,
             "reassessment": not first,
+            "applied": applied,
             "lane": enc.lane,
             "rationale": decision.rationale,
             "red_flags": decision.red_flags,
@@ -319,6 +328,7 @@ class EDArm:
     # -- simulation step ----------------------------------------------------
 
     def step(self, s: Session, t: datetime) -> None:
+        self._apply_late_decisions(s, t)
         self._finish_triage(s, t)
         self._start_triage(t)
         self._discharge(s, t)
@@ -349,6 +359,26 @@ class EDArm:
             start = max(t, enc.arrived_at)
             enc.triage_done_at = start + timedelta(
                 minutes=_draw(enc, "triage", *self.config.triage_min))
+            # Decision support starts working as the patient reaches the desk.
+            if prefetch := getattr(self.triager, "prefetch", None):
+                prefetch(enc.patient, enc.vitals)
+
+    def _apply_late_decisions(self, s: Session, t: datetime) -> None:
+        """Apply AI decisions that arrived after a provisional triage."""
+        completed = getattr(self.triager, "completed", None)
+        if completed is None:
+            return
+        by_mrn = {e.patient.mrn: e for e in self.encounters.values()}
+        for mrn, decision in completed():
+            enc = by_mrn.get(mrn)
+            if enc is not None and enc.status == EncounterStatus.WAITING_PHYSICIAN:
+                self.counters.ai_late_applied += 1
+                self.apply_assessment(s, enc, decision, t)
+            else:
+                # Too late to change care, but keep it for audit and review.
+                self.counters.ai_late_dropped += 1
+                if enc is not None:
+                    self._record_assessment(s, enc, decision, t, applied=False)
 
     def _discharge(self, s: Session, t: datetime) -> None:
         for enc in self.by_status(EncounterStatus.IN_TREATMENT):

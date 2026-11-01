@@ -90,10 +90,59 @@ is scored against **true** acuity, and patients who leave without being
 seen keep their wait in the statistics so an ED can't look faster by
 losing patients.
 
-Calibrated result (rules-based AI arm, mean of 8 simulated days): average
-wait to physician -40%, walk-in 4h SLO breaches 6.5/day to 0,
-deteriorations while waiting -43%, LWBS -83%. Under a 1.25x surge: -15%
-average wait, -55% SLO breaches, at the cost of +15% CTAS target misses.
+Calibrated to a crowded urban ED (8-18h boarding). Flow levers alone land
+within published ranges for rapid-assessment zones (~20-40%).
+
+Result with Claude triage, mean of 8 simulated days, identical resources:
+
+| Metric                          | Manual   | AI-assisted | Change |
+|---------------------------------|----------|-------------|--------|
+| Under-triaged at intake         | 20.5     | 6.4         | -69%   |
+| Avg wait to physician           | 52.8 min | 31.6 min    | -40%   |
+| P90 wait to physician           | 165 min  | 91 min      | -45%   |
+| Walk-in 4h SLO breaches / day   | 10.5     | 0.8         | -93%   |
+| CTAS 2 average wait             | 14.4 min | 9.1 min     | -37%   |
+| Deteriorated while waiting      | 8.6      | 5.2         | -39%   |
+| Left without being seen         | 7.2      | 1.6         | -78%   |
+
+Better triage alone mostly changes *who* waits (sick patients first); the
+overall wait reduction comes from flow decisions. Both are needed.
+
+## AI triage (Claude)
+
+`src/er_triage/ai/claude_triage.py`:
+
+- **Routing:** Claude Haiku 5.5 triages every patient; low-confidence cases
+  escalate to Claude Sonnet 5.5 (~8%). Structured output via
+  `messages.parse` with a Pydantic schema; the static CTAS system prompt is
+  prompt-cached.
+- **Inputs:** only what a triage nurse sees. Never ground truth or ED load.
+- **Guardrail:** Claude can raise acuity above the vital-sign rules, never
+  lower it.
+- **Resilience:** any error, refusal, or timeout falls back to the CTAS rules
+  calculator. In live mode the patient is triaged provisionally by rules if
+  Claude hasn't answered yet, and Claude's decision is applied on arrival
+  (or recorded for audit if the patient was already seen).
+- **Replay:** every response is stored in `llm_responses`, keyed by the exact
+  request. Re-running a seed with `--offline` replays it with zero API calls
+  and identical results. `initdb --drop` preserves this table.
+
+Offline accuracy on 120 stratified synthetic patients
+(`uv run er-triage eval-triage`):
+
+| Triager          | Exact | Under-triage | Emergent missed | Subtle caught |
+|------------------|-------|--------------|-----------------|---------------|
+| Nurse model      | 75%   | 22%          | 16              | 5/16          |
+| CTAS rules       | 81%   | 18%          | 13              | 0/16          |
+| Claude (routed)  | 94%   | 1%           | 0               | 16/16         |
+
+Caveat: synthetic triage notes are cleaner than real ones. This is a
+demonstration, not clinical validation.
+
+```bash
+uv run er-triage simulate --minutes 1440 --speed 120 --seed 3 --ai claude            # record
+uv run er-triage simulate --minutes 1440 --speed 120 --seed 3 --ai claude --offline  # replay
+```
 
 ## Event stream
 

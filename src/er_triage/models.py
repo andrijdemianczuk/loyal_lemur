@@ -204,6 +204,8 @@ class TriageAssessment(Base):
     priority_score: Mapped[float | None]
     rationale: Mapped[str] = mapped_column(Text, default="")
     red_flags: Mapped[list[Any]] = mapped_column(default=list)
+    # False when a decision arrived too late to change care (kept for audit).
+    applied: Mapped[bool] = mapped_column(default=True)
 
     # LLM call telemetry (null for nurse assessments).
     model: Mapped[str | None] = mapped_column(String(64))
@@ -242,3 +244,24 @@ class MetricSnapshot(Base):
     by_ctas: Mapped[dict[str, Any]] = mapped_column(default=dict)
 
     __table_args__ = (Index("ix_metrics_run_arm_time", "run_id", "arm", "sim_time"),)
+
+
+class LlmResponse(Base):
+    """Cache of model responses keyed by the exact request, so a rehearsed
+    seed can be replayed with no API calls."""
+
+    __tablename__ = "llm_responses"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    cache_key: Mapped[str] = mapped_column(String(64), unique=True)
+    model: Mapped[str] = mapped_column(String(64))
+    prompt_version: Mapped[str] = mapped_column(String(16))
+    request: Mapped[dict[str, Any]] = mapped_column(default=dict)
+    response: Mapped[dict[str, Any]] = mapped_column(default=dict)
+    latency_ms: Mapped[int]
+    input_tokens: Mapped[int]
+    output_tokens: Mapped[int]
+    cache_read_tokens: Mapped[int] = mapped_column(default=0)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )

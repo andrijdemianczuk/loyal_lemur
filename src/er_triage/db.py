@@ -32,10 +32,16 @@ def session_scope() -> Iterator[Session]:
         session.close()
 
 
-def init_db(drop: bool = False) -> None:
+# Recorded model responses are demo replay assets; keep them across resets.
+PRESERVED_TABLES = {"llm_responses"}
+
+
+def init_db(drop: bool = False, drop_cache: bool = False) -> None:
     engine = get_engine()
     if drop:
-        Base.metadata.drop_all(engine)
+        tables = [t for t in Base.metadata.sorted_tables
+                  if drop_cache or t.name not in PRESERVED_TABLES]
+        Base.metadata.drop_all(engine, tables=tables)
     Base.metadata.create_all(engine)
 
 

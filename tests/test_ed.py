@@ -115,3 +115,32 @@ def test_rules_triager_flags_abnormal_vitals():
     patient = gen.new_patient(START)
     decision = RulesTriager().assess(patient, _vitals(spo2=84), patient.presentation.ctas, 0)
     assert decision.ctas == 1 and "SpO2 84%" in decision.red_flags
+
+
+def test_stream_independent_of_step_timing(db):
+    """Irregular wall-clock ticks must yield exactly the same simulation."""
+    import random as _random
+
+    def run(step_sizes):
+        engine = FeedEngine(EventBus([]), sim_start=START, seed=21)
+        engine.create_run()
+        t = START
+        while t < START + timedelta(hours=6):
+            t += timedelta(seconds=next(step_sizes))
+            engine.step(t)
+        engine.step(START + timedelta(hours=6))
+        with session_scope() as s:
+            rows = s.execute(
+                select(Encounter.arm, Encounter.arrived_at, Encounter.physician_seen_at)
+                .where(Encounter.run_id == engine.run_id)
+                .order_by(Encounter.arm, Encounter.arrived_at)
+            ).all()
+        return engine, [tuple(r) for r in rows]
+
+    rng = _random.Random(0)
+    a, rows_a = run(iter(lambda: 600, None))
+    b, rows_b = run(iter(lambda: rng.uniform(5, 400), None))
+    try:
+        assert rows_a and rows_a == rows_b
+    finally:
+        _cleanup(a, b)

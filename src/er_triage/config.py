@@ -35,7 +35,12 @@ class Settings(BaseSettings):
 
     # Anthropic
     anthropic_key_file: Path = PROJECT_ROOT / ".key"
-    anthropic_model: str = "claude-sonnet-5-5"
+    # AI arm triage: "claude" (with rules fallback) or "rules".
+    ai_triager: str = "claude"
+    triage_model: str = "claude-haiku-5-5"
+    escalation_model: str = "claude-sonnet-5-5"
+    # Replay only from the response cache; never call the API.
+    llm_offline: bool = False
 
     # Event output: comma-separated list of sinks ("console", "file", "hec").
     event_sinks: str = "file"

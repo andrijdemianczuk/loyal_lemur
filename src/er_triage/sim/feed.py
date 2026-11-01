@@ -34,7 +34,9 @@ from er_triage.sim.triage import NurseTriager, RulesTriager, Triager
 
 log = logging.getLogger(__name__)
 
-SUBSTEP = timedelta(minutes=2)
+# Fixed simulated-time grid. Steps always process whole grid intervals, so
+# the patient stream depends only on the seed, never on wall-clock timing.
+SUBSTEP = timedelta(minutes=1)
 SNAPSHOT_EVERY = timedelta(minutes=15)
 
 
@@ -48,6 +50,7 @@ class FeedEngine:
         seed: int | None = None,
         scenario: str = "baseline_day",
         daily_volume: float = 150.0,
+        boarding_min: tuple[float, float] = (480, 1080),
         arrival_multiplier: float = 1.0,
         tick_seconds: float = 1.0,
         ed_config: EDConfig | None = None,
@@ -56,7 +59,7 @@ class FeedEngine:
     ) -> None:
         self.bus = bus
         self.clock = SimClock(sim_start, speed)
-        self.generator = PatientGenerator(seed, daily_volume)
+        self.generator = PatientGenerator(seed, daily_volume, boarding_min)
         self.seed = seed
         self.scenario = scenario
         self.arrival_multiplier = arrival_multiplier
@@ -74,9 +77,14 @@ class FeedEngine:
                           SloAwarePolicy(self.ai_ed_config.slo_guard_min),
                           self.ai_ed_config, self._emit),
         }
+        if attach := getattr(self.arms[Arm.AI].triager, "attach_emitter", None):
+            attach(lambda event_type, data: self._emit(
+                event_type, self.clock.now(), data, Arm.AI))
         self._last_tick = sim_start
         self._next_snapshot = sim_start + SNAPSHOT_EVERY
         self._task: asyncio.Task[None] | None = None
+        self._stopping = False
+        self.stop_at: datetime | None = None  # optional end of simulated time
 
     # -- lifecycle -------------------------------------------------------------
 
@@ -87,6 +95,7 @@ class FeedEngine:
             "tick_seconds": self.tick_seconds,
             "ed": {arm.value: a.config.__dict__ for arm, a in self.arms.items()},
             "policies": {arm.value: a.policy.name for arm, a in self.arms.items()},
+            "triagers": {arm.value: type(a.triager).__name__ for arm, a in self.arms.items()},
         }
         with session_scope() as s:
             run = SimRun(
@@ -106,23 +115,32 @@ class FeedEngine:
             self.create_run()
         self._task = asyncio.create_task(self._loop(), name="feed-engine")
 
+    @property
+    def processed_until(self) -> datetime:
+        """Simulated time the engine has fully processed (lags the clock while
+        waiting on slow work such as blocking AI calls)."""
+        return self._last_tick
+
     async def stop(self) -> None:
         if self._task is not None:
-            self._task.cancel()
-            try:
-                await self._task
-            except asyncio.CancelledError:
-                pass
+            # Let the in-flight step finish so no writes land after the run ends.
+            self._stopping = True
+            await self._task
             self._task = None
+        if close := getattr(self.arms[Arm.AI].triager, "close", None):
+            close()
         if self.run_id is not None:
             with session_scope() as s:
                 s.get(SimRun, self.run_id).status = "stopped"
             self._emit(EventType.RUN_STOPPED, self.clock.now(), {})
 
     async def _loop(self) -> None:
-        while True:
+        while not self._stopping:
             try:
-                await asyncio.to_thread(self.step, self.clock.now())
+                now = self.clock.now()
+                if self.stop_at is not None:
+                    now = min(now, self.stop_at)
+                await asyncio.to_thread(self.step, now)
             except Exception:
                 log.exception("feed tick failed")
             await asyncio.sleep(self.tick_seconds)
@@ -130,12 +148,13 @@ class FeedEngine:
     # -- simulation ------------------------------------------------------------
 
     def step(self, now: datetime) -> None:
-        """Advance the simulation to ``now`` (simulated time)."""
-        if now <= self._last_tick:
+        """Advance the simulation through every whole grid interval up to
+        ``now`` (simulated time)."""
+        if now < self._last_tick + SUBSTEP:
             return
         with session_scope() as s:
-            while self._last_tick < now:
-                t = min(now, self._last_tick + SUBSTEP)
+            while self._last_tick + SUBSTEP <= now:
+                t = self._last_tick + SUBSTEP
                 self._substep(s, self._last_tick, t)
                 self._last_tick = t
 
