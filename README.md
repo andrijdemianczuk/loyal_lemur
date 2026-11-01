@@ -32,7 +32,7 @@ createuser er_triage && createdb -O er_triage er_triage
 
 uv sync
 uv run er-triage initdb
-uv run er-triage serve          # http://127.0.0.1:8000/health
+uv run er-triage serve          # dashboard at http://127.0.0.1:8000
 uv run pytest
 
 # Headless synthetic feed: 8 simulated hours at 60 sim-minutes per second
@@ -90,20 +90,22 @@ is scored against **true** acuity, and patients who leave without being
 seen keep their wait in the statistics so an ED can't look faster by
 losing patients.
 
-Calibrated to a crowded urban ED (8-18h boarding). Flow levers alone land
-within published ranges for rapid-assessment zones (~20-40%).
+Calibrated to a crowded but stable urban ED (4-10h boarding), measured
+in **steady state** (days 2-3 of 3-day runs, after the department has filled;
+day 1 starts empty and flatters both arms). Flow levers alone land within
+published ranges for rapid-assessment zones (~20-40%).
 
-Result with Claude triage, mean of 8 simulated days, identical resources:
+Result with Claude triage, mean of 8 steady-state ED-days, identical resources:
 
 | Metric                          | Manual   | AI-assisted | Change |
 |---------------------------------|----------|-------------|--------|
-| Under-triaged at intake         | 20.5     | 6.4         | -69%   |
-| Avg wait to physician           | 52.8 min | 31.6 min    | -40%   |
-| P90 wait to physician           | 165 min  | 91 min      | -45%   |
-| Walk-in 4h SLO breaches / day   | 10.5     | 0.8         | -93%   |
-| CTAS 2 average wait             | 14.4 min | 9.1 min     | -37%   |
-| Deteriorated while waiting      | 8.6      | 5.2         | -39%   |
-| Left without being seen         | 7.2      | 1.6         | -78%   |
+| Under-triaged at intake         | 23.2     | 4.8         | -80%   |
+| Avg wait to physician           | 60 min   | 35 min      | -42%   |
+| P90 wait to physician           | 164 min  | 96 min      | -42%   |
+| Walk-in 4h SLO breaches / day   | 8.7      | 0           | -100%  |
+| Seen after true CTAS target     | 47       | 36          | -24%   |
+| Deteriorated while waiting      | 6.8      | 4.2         | -38%   |
+| Left without being seen         | 5.9      | 0.8         | -87%   |
 
 Better triage alone mostly changes *who* waits (sick patients first); the
 overall wait reduction comes from flow decisions. Both are needed.
@@ -143,6 +145,27 @@ demonstration, not clinical validation.
 uv run er-triage simulate --minutes 1440 --speed 120 --seed 3 --ai claude            # record
 uv run er-triage simulate --minutes 1440 --speed 120 --seed 3 --ai claude --offline  # replay
 ```
+
+## Live dashboard
+
+`uv run er-triage serve`, then open http://127.0.0.1:8000. FastAPI serves a
+single page (Alpine.js + ECharts from CDN, no build step) that receives a full
+state snapshot every second over server-sent events:
+
+- KPI tiles comparing both EDs, charts of wait to physician, longest walk-in
+  wait against the 4h SLO, and the waiting room by true acuity (each with a
+  data-table view)
+- both live queues with capacity (beds, hallway, boarding, fast track,
+  intake, results area); "Show ground truth" reveals under-triaged patients
+- click a patient for the triage note, vitals, and every triage decision
+  with Claude's rationale, red flags and latency
+- controls: seed, day start, arrival surge, AI mode (live Claude, recorded
+  replay, rules only), pause/resume, speed
+- `ER_DEMO_PROFILE=pipeline-pitch` adds the event-stream and sink panel
+
+Light and dark themes use the reference data-viz palette: color identifies
+the ED (blue AI, orange manual) and nothing else. `/?snapshot` renders a
+single static state (for screenshots).
 
 ## Event stream
 

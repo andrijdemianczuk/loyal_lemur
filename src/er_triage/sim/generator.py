@@ -78,7 +78,7 @@ def poisson(rng: random.Random, lam: float) -> int:
 
 class PatientGenerator:
     def __init__(self, seed: int | None = None, daily_volume: float = 150.0,
-                 boarding_min: tuple[float, float] = (480, 1080)) -> None:
+                 boarding_min: tuple[float, float] = (240, 600)) -> None:
         self.boarding_min = boarding_min
         self.rng = random.Random(seed)
         self.faker = Faker("en_CA")
@@ -202,7 +202,7 @@ class PatientGenerator:
             assess_min=rng.uniform(*ASSESS_MIN[p.ctas]),
             treatment_min=rng.uniform(*p.treatment_min),
             admitted=admitted,
-            # Access block: admitted patients board in ED beds for 8-18h,
+            # Access block: admitted patients board in ED beds for 4-10h,
             # the main driver of crowding in Canadian EDs.
             boarding_min=rng.uniform(*self.boarding_min) if admitted else 0.0,
             patience_min=(

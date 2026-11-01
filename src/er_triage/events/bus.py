@@ -51,6 +51,10 @@ class EventBus:
         self._loop: asyncio.AbstractEventLoop | None = None
         self.stats = BusStats(sinks={s.name: SinkStats() for s in sinks})
 
+    def add_sink(self, sink: Sink) -> None:
+        self.sinks.append(sink)
+        self.stats.sinks[sink.name] = SinkStats()
+
     def emit(self, event_type: EventType, data: dict[str, Any] | None = None, **envelope: Any) -> Event:
         event = Event(event_type=event_type, data=data or {}, **envelope)
         if len(self._buffer) >= self._max_buffer:

@@ -516,6 +516,13 @@ class EDArm:
 
     def snapshot(self, s: Session, run_id: uuid.UUID, t: datetime,
                  window_min: float = 60) -> dict[str, Any]:
+        """Persist and publish a metrics snapshot."""
+        metrics = self.metrics(t, window_min)
+        s.add(MetricSnapshot(run_id=run_id, arm=self.arm, sim_time=t, **metrics))
+        self._emit(EventType.METRICS_SNAPSHOT, t, metrics, arm=self.arm)
+        return metrics
+
+    def metrics(self, t: datetime, window_min: float = 60) -> dict[str, Any]:
         c = self.counters
         recent = [r.wait_min for r in c.waits
                   if (t - r.at).total_seconds() / 60 <= window_min]
@@ -549,8 +556,6 @@ class EDArm:
             "seen": c.seen,
             "by_ctas": by_ctas,
         }
-        s.add(MetricSnapshot(run_id=run_id, arm=self.arm, sim_time=t, **metrics))
-        self._emit(EventType.METRICS_SNAPSHOT, t, metrics, arm=self.arm)
         return metrics
 
 

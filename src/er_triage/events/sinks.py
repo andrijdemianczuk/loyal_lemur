@@ -110,3 +110,26 @@ class HecSink:
 
     async def close(self) -> None:
         await self._client.aclose()
+
+
+class MemorySink:
+    """Keeps recent notable events and per-type counts in memory for the live
+    dashboard."""
+
+    name = "memory"
+
+    def __init__(self, keep: int = 200, types: set[str] | None = None) -> None:
+        from collections import Counter, deque
+
+        self.recent: deque[dict] = deque(maxlen=keep)
+        self.counts: Counter[str] = Counter()
+        self.types = types
+
+    async def write(self, batch: list[Event]) -> None:
+        for e in batch:
+            self.counts[e.event_type] += 1
+            if self.types is None or e.event_type in self.types:
+                self.recent.append(e.to_json_dict())
+
+    async def close(self) -> None:
+        pass

@@ -11,6 +11,7 @@ import asyncio
 import dataclasses
 import logging
 import random
+import threading
 import uuid
 from datetime import datetime, timedelta
 
@@ -50,7 +51,7 @@ class FeedEngine:
         seed: int | None = None,
         scenario: str = "baseline_day",
         daily_volume: float = 150.0,
-        boarding_min: tuple[float, float] = (480, 1080),
+        boarding_min: tuple[float, float] = (240, 600),
         arrival_multiplier: float = 1.0,
         tick_seconds: float = 1.0,
         ed_config: EDConfig | None = None,
@@ -84,6 +85,8 @@ class FeedEngine:
         self._next_snapshot = sim_start + SNAPSHOT_EVERY
         self._task: asyncio.Task[None] | None = None
         self._stopping = False
+        # Held while a step mutates state; readers (the web UI) take it too.
+        self.lock = threading.Lock()
         self.stop_at: datetime | None = None  # optional end of simulated time
 
     # -- lifecycle -------------------------------------------------------------
@@ -152,7 +155,7 @@ class FeedEngine:
         ``now`` (simulated time)."""
         if now < self._last_tick + SUBSTEP:
             return
-        with session_scope() as s:
+        with self.lock, session_scope() as s:
             while self._last_tick + SUBSTEP <= now:
                 t = self._last_tick + SUBSTEP
                 self._substep(s, self._last_tick, t)

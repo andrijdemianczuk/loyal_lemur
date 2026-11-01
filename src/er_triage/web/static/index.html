@@ -1,0 +1,286 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ED Triage Decision Support</title>
+<script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.14.1/dist/cdn.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/echarts@5.5.1/dist/echarts.min.js"></script>
+<link rel="stylesheet" href="/static/app.css">
+</head>
+<body x-data="app()" x-init="init()" class="viz-root">
+
+<header class="topbar">
+  <div class="brand">
+    <h1>ED Triage Decision Support</h1>
+    <span class="sub">Live simulation &middot; same patients, same staff, two triage approaches</span>
+  </div>
+  <div class="clock" x-show="snap.run">
+    <span class="clock-time" x-text="clockText()"></span>
+    <span class="pill" :class="snap.run?.paused ? 'pill-muted' : 'pill-live'"
+          x-text="snap.run?.paused ? 'Paused' : 'Live'"></span>
+  </div>
+  <div class="topbar-actions">
+    <label class="toggle"><input type="checkbox" x-model="showTruth"> Show ground truth</label>
+    <button class="btn-ghost" @click="toggleTheme()" :aria-label="'Switch to ' + (theme === 'dark' ? 'light' : 'dark') + ' theme'"
+            x-text="theme === 'dark' ? 'Light' : 'Dark'"></button>
+  </div>
+</header>
+
+<!-- Controls: one row, above everything they scope -->
+<section class="controls">
+  <label>Seed <input type="number" x-model.number="form.seed" min="0" class="w-num"></label>
+  <label>Day starts
+    <select x-model="form.startHour">
+      <template x-for="h in [0, 6, 8, 10, 14, 18]"><option :value="h" x-text="String(h).padStart(2,'0') + ':00'"></option></template>
+    </select>
+  </label>
+  <label>Arrivals
+    <select x-model.number="form.surge">
+      <option value="1">Normal day</option>
+      <option value="1.25">Busy (1.25&times;)</option>
+      <option value="1.5">Surge (1.5&times;)</option>
+    </select>
+  </label>
+  <label>AI triage
+    <select x-model="form.ai_mode">
+      <option value="replay">Claude (recorded replay)</option>
+      <option value="claude">Claude (live API)</option>
+      <option value="rules">Rules only (no LLM)</option>
+    </select>
+  </label>
+  <button class="btn-primary" @click="startRun()" :disabled="busy">Start new run</button>
+  <span class="divider"></span>
+  <button class="btn" @click="post(snap.run?.paused ? '/api/resume' : '/api/pause')" :disabled="!snap.run"
+          x-text="snap.run?.paused ? 'Resume' : 'Pause'"></button>
+  <label class="speed">Speed
+    <input type="range" min="0" :max="speeds.length - 1" step="1" x-model.number="speedIdx" @change="setSpeed()" :disabled="!snap.run">
+    <span class="speed-val" x-text="speeds[speedIdx] + ' sim-min / s'"></span>
+  </label>
+</section>
+
+<main x-show="snap.run" x-cloak>
+
+  <!-- Legend shared by everything below: color = which ED -->
+  <div class="legend" aria-label="Legend">
+    <span class="key"><span class="swatch" style="background: var(--series-1)"></span>AI-assisted ED</span>
+    <span class="key"><span class="swatch" style="background: var(--series-2)"></span>Manual triage ED</span>
+  </div>
+
+  <!-- KPI comparison tiles -->
+  <section class="tiles">
+    <template x-for="k in kpis" :key="k.key">
+      <div class="tile">
+        <div class="tile-label" x-text="k.label"></div>
+        <div class="tile-values">
+          <div><span class="tile-num" x-text="fmt(metric('ai', k.key), k.unit)"></span><span class="tile-who">AI</span></div>
+          <div><span class="tile-num tile-num-2" x-text="fmt(metric('baseline', k.key), k.unit)"></span><span class="tile-who">Manual</span></div>
+        </div>
+        <div class="tile-delta" :class="deltaClass(k)" x-text="deltaText(k)"></div>
+      </div>
+    </template>
+  </section>
+
+  <!-- Charts -->
+  <section class="charts">
+    <figure class="card">
+      <figcaption><strong>Wait to see a physician</strong><span>Average, patients seen in the last hour (minutes)</span></figcaption>
+      <div id="chart-wait" class="chart" role="img" aria-label="Line chart of average wait to physician over time for both EDs"></div>
+      <details><summary>Data table</summary>
+        <table class="data"><thead><tr><th>Time</th><th>AI avg</th><th>Manual avg</th><th>AI P90</th><th>Manual P90</th></tr></thead>
+          <tbody><template x-for="p in snap.series.slice(-12).reverse()"><tr>
+            <td x-text="p.t.slice(11,16)"></td><td x-text="p.ai.avg_wait"></td><td x-text="p.baseline.avg_wait"></td>
+            <td x-text="p.ai.p90_wait"></td><td x-text="p.baseline.p90_wait"></td></tr></template></tbody></table>
+      </details>
+    </figure>
+    <figure class="card">
+      <figcaption><strong>Longest walk-in wait right now</strong><span>Against the 4-hour walk-in SLO (minutes)</span></figcaption>
+      <div id="chart-slo" class="chart" role="img" aria-label="Line chart of the longest current walk-in wait for both EDs with the 4 hour SLO line"></div>
+      <details><summary>Data table</summary>
+        <table class="data"><thead><tr><th>Time</th><th>AI longest</th><th>Manual longest</th><th>AI breaches</th><th>Manual breaches</th></tr></thead>
+          <tbody><template x-for="p in snap.series.slice(-12).reverse()"><tr>
+            <td x-text="p.t.slice(11,16)"></td><td x-text="p.ai.max_walk_in_wait"></td><td x-text="p.baseline.max_walk_in_wait"></td>
+            <td x-text="p.ai.slo_breaches"></td><td x-text="p.baseline.slo_breaches"></td></tr></template></tbody></table>
+      </details>
+    </figure>
+    <figure class="card">
+      <figcaption><strong>Waiting room now</strong><span>Patients waiting, by true acuity (CTAS 1 = most urgent)</span></figcaption>
+      <div id="chart-ctas" class="chart" role="img" aria-label="Grouped bar chart of patients waiting by CTAS level for both EDs"></div>
+      <details><summary>Data table</summary>
+        <table class="data"><thead><tr><th>CTAS</th><th>AI waiting</th><th>Manual waiting</th><th>AI avg wait</th><th>Manual avg wait</th></tr></thead>
+          <tbody><template x-for="l in ['1','2','3','4','5']"><tr>
+            <td x-text="l"></td><td x-text="byCtas('ai', l).waiting"></td><td x-text="byCtas('baseline', l).waiting"></td>
+            <td x-text="byCtas('ai', l).avg_wait_min"></td><td x-text="byCtas('baseline', l).avg_wait_min"></td></tr></template></tbody></table>
+      </details>
+    </figure>
+  </section>
+
+  <!-- Queues -->
+  <section class="queues">
+    <template x-for="arm in ['ai', 'baseline']" :key="arm">
+      <div class="card queue">
+        <div class="queue-head">
+          <h2><span class="swatch" :style="'background: var(--series-' + (arm === 'ai' ? 1 : 2) + ')'"></span>
+            <span x-text="arm === 'ai' ? 'AI-assisted ED' : 'Manual triage ED'"></span></h2>
+          <span class="queue-sub" x-text="arm === 'ai' ? (snap.params.ai_mode === 'rules' ? 'Rules triage' : 'Claude triage') + ' · SLO-aware queue · dynamic intake zone' : 'Nurse triage · CTAS then first-come · scheduled intake zone'"></span>
+        </div>
+        <div class="capacity" x-data="{c: null}" x-effect="c = snap.arms[arm]?.capacity">
+          <template x-if="c">
+            <div class="cap-row">
+              <span class="cap"><b x-text="Math.min(c.main.used, c.main.beds) + '/' + c.main.beds"></b> beds
+                <template x-if="c.main.hallway > 0"><em x-text="'+' + c.main.hallway + ' hallway'"></em></template></span>
+              <span class="cap"><b x-text="c.boarding"></b> boarding</span>
+              <span class="cap" :class="!c.fast_track.open && 'cap-closed'"><b x-text="c.fast_track.used + '/' + c.fast_track.total"></b> fast track<em x-show="!c.fast_track.open"> closed</em></span>
+              <span class="cap" :class="!c.intake.open && 'cap-closed'"><b x-text="c.intake.used + '/' + c.intake.total"></b> intake<em x-show="!c.intake.open"> closed</em></span>
+              <span class="cap"><b x-text="c.results.used + '/' + c.results.total"></b> results area</span>
+            </div>
+          </template>
+        </div>
+        <div class="table-wrap">
+          <table class="queue-table">
+            <thead><tr><th>CTAS</th><th>Patient</th><th>Complaint</th><th class="num">Waiting</th><th>Lane</th></tr></thead>
+            <tbody>
+              <template x-for="p in (snap.arms[arm]?.waiting || []).slice(0, 14)" :key="p.encounter_id">
+                <tr @click="openDetail(p.encounter_id)" tabindex="0" @keydown.enter="openDetail(p.encounter_id)" class="row">
+                  <td>
+                    <span class="ctas" :class="p.assigned_ctas && p.assigned_ctas <= 2 && 'ctas-hot'"
+                          x-text="p.assigned_ctas ? p.assigned_ctas : '…'"></span>
+                    <template x-if="showTruth && p.assigned_ctas && p.true_ctas < p.assigned_ctas">
+                      <span class="truth" :title="'True acuity CTAS ' + p.true_ctas"><span aria-hidden="true">▲</span> <span x-text="'really ' + p.true_ctas"></span></span>
+                    </template>
+                  </td>
+                  <td><span x-text="p.name"></span> <span class="muted" x-text="p.age + p.sex"></span>
+                    <span class="muted" x-show="p.arrival_mode === 'ambulance'">· EMS</span></td>
+                  <td x-text="p.complaint"></td>
+                  <td class="num">
+                    <span x-text="dur(p.wait_min)"></span>
+                    <span class="flag flag-critical" x-show="p.slo_risk" title="Walk-in approaching the 4 h SLO"><span aria-hidden="true">⚠</span> SLO</span>
+                    <span class="flag flag-serious" x-show="p.deteriorated" title="Deteriorated while waiting"><span aria-hidden="true">↓</span> worse</span>
+                  </td>
+                  <td class="muted" x-text="p.status === 'waiting_triage' ? 'triage' : laneName(p.lane)"></td>
+                </tr>
+              </template>
+              <tr x-show="!(snap.arms[arm]?.waiting || []).length"><td colspan="5" class="empty">Nobody waiting</td></tr>
+            </tbody>
+          </table>
+          <div class="more" x-show="(snap.arms[arm]?.waiting || []).length > 14"
+               x-text="'+ ' + ((snap.arms[arm]?.waiting || []).length - 14) + ' more waiting'"></div>
+        </div>
+      </div>
+    </template>
+  </section>
+
+  <!-- Story + feed + telemetry -->
+  <section class="bottom">
+    <div class="card story">
+      <h2>Why it matters</h2>
+      <ul class="story-list">
+        <li><b x-text="(metric('baseline','slo_breaches') - metric('ai','slo_breaches'))"></b> fewer walk-ins waited past 4 hours
+          <span class="muted" x-text="'(' + metric('ai','slo_breaches') + ' vs ' + metric('baseline','slo_breaches') + ')'"></span></li>
+        <li><b x-text="metric('baseline','under_triaged') - metric('ai','under_triaged')"></b> fewer patients under-triaged at intake
+          <span class="muted">— the patients most at risk of waiting too long</span></li>
+        <li><b x-text="metric('baseline','deteriorations') - metric('ai','deteriorations')"></b> fewer patients deteriorated in the waiting room</li>
+        <li><b x-text="metric('baseline','lwbs') - metric('ai','lwbs')"></b> fewer patients left without being seen</li>
+        <li class="muted">Same staff, beds and patients in both EDs. Only the decisions differ: who is seen first, where they go, and when to open capacity.</li>
+      </ul>
+      <template x-if="snap.profile === 'pipeline-pitch'">
+        <div class="pipeline">
+          <h3>Behind it: the event stream</h3>
+          <p class="muted">Every arrival, vital sign, triage decision and LLM call is a versioned JSON event, sent to a file and an HTTP Event Collector endpoint. Patient events carry (synthetic) PHI, so the pipeline can mask, route and reduce before anything reaches analytics.</p>
+          <div class="kv">
+            <span>Events emitted</span><b x-text="snap.telemetry.events_emitted.toLocaleString()"></b>
+            <span>Dropped</span><b x-text="snap.telemetry.events_dropped"></b>
+          </div>
+          <table class="data"><thead><tr><th>Sink</th><th class="num">Sent</th><th class="num">Failed</th></tr></thead>
+            <tbody><template x-for="(v, k) in snap.telemetry.sinks"><tr><td x-text="k"></td><td class="num" x-text="v.sent.toLocaleString()"></td><td class="num" x-text="v.failed"></td></tr></template></tbody></table>
+          <table class="data"><thead><tr><th>Event type</th><th class="num">Count</th></tr></thead>
+            <tbody><template x-for="[k, v] in Object.entries(snap.telemetry.event_counts).sort((a,b) => b[1]-a[1])"><tr><td x-text="k"></td><td class="num" x-text="v.toLocaleString()"></td></tr></template></tbody></table>
+        </div>
+      </template>
+    </div>
+
+    <div class="card">
+      <h2>AI triage engine</h2>
+      <template x-if="snap.telemetry.llm">
+        <div class="kv">
+          <span>Mode</span><b x-text="snap.telemetry.llm.offline ? 'Recorded replay (no API calls)' : 'Live Claude API'"></b>
+          <span>Model calls</span><b x-text="snap.telemetry.llm.calls + ' (' + snap.telemetry.llm.cache_hits + ' replayed)'"></b>
+          <span>Escalated to Sonnet</span><b x-text="snap.telemetry.llm.escalations"></b>
+          <span>Rules fallbacks</span><b x-text="snap.telemetry.llm.fallbacks"></b>
+          <span>Provisional, AI late</span><b x-text="snap.telemetry.llm.late"></b>
+          <span>Tokens in / out</span><b x-text="snap.telemetry.llm.input_tokens.toLocaleString() + ' / ' + snap.telemetry.llm.output_tokens.toLocaleString()"></b>
+          <span>Cost at list price</span><b x-text="'$' + snap.telemetry.llm.est_cost_usd.toFixed(3)"></b>
+        </div>
+      </template>
+      <p class="muted" x-show="!snap.telemetry.llm">Rules-only mode: deterministic CTAS calculator, no LLM.</p>
+      <p class="muted small">Guardrail: the AI can raise acuity above the vital-sign rules, never lower it. Every decision is logged with its rationale for audit.</p>
+    </div>
+
+    <div class="card feed">
+      <h2>Live feed</h2>
+      <ol class="feed-list">
+        <template x-for="e in feedItems()" :key="e.event_id">
+          <li :class="'feed-' + e.kind">
+            <span class="feed-time" x-text="(e.sim_time || '').slice(11,16)"></span>
+            <span class="feed-arm" x-show="e.arm"><span class="swatch sm" :style="'background: var(--series-' + (e.arm === 'ai' ? 1 : 2) + ')'"></span></span>
+            <span x-text="e.text"></span>
+          </li>
+        </template>
+      </ol>
+    </div>
+  </section>
+</main>
+
+<section class="empty-state" x-show="!snap.run" x-cloak>
+  <h2>No simulation running</h2>
+  <p>Pick a seed and press <b>Start new run</b>. "Recorded replay" uses saved Claude responses for that seed (rules if none are recorded); "Live API" calls Claude for real.</p>
+</section>
+
+<!-- Patient detail drawer -->
+<aside class="drawer" x-show="detail" x-cloak @keydown.escape.window="detail = null" role="dialog" aria-modal="true" aria-labelledby="drawer-title">
+  <template x-if="detail">
+    <div class="drawer-body">
+      <div class="drawer-head">
+        <div>
+          <h2 id="drawer-title" x-text="detail.patient.name"></h2>
+          <div class="muted" x-text="detail.patient.mrn + ' · ' + detail.patient.sex + ' · born ' + detail.patient.date_of_birth + ' · ' + (detail.patient.arrival_mode === 'ambulance' ? 'arrived by ambulance' : 'walk-in')"></div>
+          <div class="muted" x-text="(detail.encounter.arm === 'ai' ? 'AI-assisted ED' : 'Manual triage ED') + ' · ' + detail.encounter.status.replaceAll('_', ' ')"></div>
+        </div>
+        <button class="btn-ghost" @click="detail = null" aria-label="Close">Close</button>
+      </div>
+      <div class="drawer-ctas">
+        <div><span class="tile-label">Assigned</span><span class="ctas big" x-text="detail.encounter.assigned_ctas || '…'"></span></div>
+        <div x-show="showTruth"><span class="tile-label">True acuity</span><span class="ctas big" x-text="detail.encounter.current_ctas"></span></div>
+      </div>
+      <h3 x-text="detail.patient.chief_complaint"></h3>
+      <p x-text="detail.patient.triage_note"></p>
+      <p class="muted" x-text="detail.patient.history"></p>
+
+      <h3>Triage decisions</h3>
+      <template x-for="a in detail.assessments">
+        <div class="assessment" :class="!a.applied && 'not-applied'">
+          <div class="assess-head">
+            <span class="ctas" x-text="a.ctas"></span>
+            <b x-text="sourceName(a)"></b>
+            <span class="muted" x-text="a.at.slice(11,16) + (a.latency_ms ? ' · ' + (a.latency_ms/1000).toFixed(1) + ' s' : '')"></span>
+            <span class="flag" x-show="!a.applied">recorded only (patient already seen)</span>
+          </div>
+          <p x-text="a.rationale"></p>
+          <div class="chips" x-show="a.red_flags.length"><template x-for="f in a.red_flags"><span class="chip" x-text="f"></span></template></div>
+        </div>
+      </template>
+
+      <h3>Vital signs</h3>
+      <table class="data"><thead><tr><th>Time</th><th class="num">HR</th><th class="num">BP</th><th class="num">RR</th><th class="num">SpO2</th><th class="num">T</th><th class="num">Pain</th><th class="num">GCS</th></tr></thead>
+        <tbody><template x-for="v in detail.vitals.slice().reverse()"><tr>
+          <td x-text="v.at.slice(11,16)"></td><td class="num" x-text="v.hr"></td><td class="num" x-text="v.sbp + '/' + v.dbp"></td>
+          <td class="num" x-text="v.rr"></td><td class="num" x-text="v.spo2"></td><td class="num" x-text="v.temp"></td>
+          <td class="num" x-text="v.pain"></td><td class="num" x-text="v.gcs"></td></tr></template></tbody></table>
+    </div>
+  </template>
+</aside>
+<div class="scrim" x-show="detail" x-cloak @click="detail = null"></div>
+
+<script src="/static/app.js"></script>
+</body>
+</html>
