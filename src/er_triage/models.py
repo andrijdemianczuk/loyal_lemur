@@ -56,7 +56,14 @@ class EncounterStatus(StrEnum):
 
 class AssessmentSource(StrEnum):
     NURSE = "nurse"
+    RULES = "rules"  # deterministic CTAS calculator (AI arm fallback)
     AI = "ai"
+
+
+class Lane(StrEnum):
+    MAIN = "main"
+    FAST_TRACK = "fast"
+    INTAKE = "intake"  # rapid assessment zone staffed by idle main physicians
 
 
 def _uuid_pk() -> Mapped[uuid.UUID]:
@@ -142,7 +149,7 @@ class Encounter(Base):
     triaged_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     physician_seen_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     departed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
-    bed: Mapped[str | None] = mapped_column(String(16))
+    lane: Mapped[Lane | None] = mapped_column(String(8))
 
     # Deterioration while waiting can raise effective acuity above true_ctas.
     current_ctas: Mapped[int | None] = _ctas(nullable=True)
@@ -227,7 +234,11 @@ class MetricSnapshot(Base):
     p90_wait_min: Mapped[float]
     max_walk_in_wait_min: Mapped[float]
     slo_breaches: Mapped[int]  # walk-ins exceeding the 4h SLO so far
-    ctas_target_misses: Mapped[int]  # time-to-physician above CTAS target
+    ctas_target_misses: Mapped[int]  # time-to-physician above true CTAS target
+    under_triaged: Mapped[int]  # assigned a lower acuity than true at triage
+    deteriorations: Mapped[int]
+    lwbs: Mapped[int]
+    seen: Mapped[int]
     by_ctas: Mapped[dict[str, Any]] = mapped_column(default=dict)
 
     __table_args__ = (Index("ix_metrics_run_arm_time", "run_id", "arm", "sim_time"),)

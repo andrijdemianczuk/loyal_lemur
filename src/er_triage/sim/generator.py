@@ -9,6 +9,7 @@ from faker import Faker
 
 from er_triage.models import ArrivalMode
 from er_triage.sim.catalog import (
+    ASSESS_MIN,
     BY_CTAS,
     CTAS_MIX,
     HOURLY_ARRIVAL_FACTOR,
@@ -50,6 +51,17 @@ class NewPatient:
     triage_note: str
     fragility: float  # latent threshold for deterioration; lower = more fragile
     vitals: Vitals
+    # Care-path outcomes drawn once per patient so both ED arms face the same
+    # patient; only the arms' triage and flow decisions differ.
+    assess_min: float  # physician time for initial assessment
+    treatment_min: float  # time in a bed or chair once seen
+    admitted: bool
+    boarding_min: float  # extra bed time waiting for an inpatient bed
+    patience_min: float  # how long a walk-in will wait before leaving (LWBS)
+    # Seed for this patient's vital-sign noise. Each ED arm gets its own
+    # Random from it, so the arms never perturb each other or the arrival
+    # stream, and identical care yields identical vitals in both arms.
+    vitals_seed: int
 
 
 def poisson(rng: random.Random, lam: float) -> int:
@@ -66,10 +78,7 @@ def poisson(rng: random.Random, lam: float) -> int:
 
 class PatientGenerator:
     def __init__(self, seed: int | None = None, daily_volume: float = 150.0) -> None:
-        # Separate streams: arrivals must be identical for a given seed no
-        # matter how many vitals rechecks each ED arm performs.
         self.rng = random.Random(seed)
-        self.vitals_rng = random.Random(None if seed is None else seed + 1)
         self.faker = Faker("en_CA")
         self.faker.seed_instance(seed)
         self.daily_volume = daily_volume
@@ -111,10 +120,11 @@ class PatientGenerator:
             gcs=round(u("gcs")),
         )
 
-    def recheck_vitals(self, p: Presentation, last: Vitals, deteriorated: bool) -> Vitals:
+    @staticmethod
+    def recheck_vitals(p: Presentation, last: Vitals, deteriorated: bool,
+                       rng: random.Random) -> Vitals:
         """Small random drift around the presentation profile; a deteriorated
         patient trends toward shock/respiratory compromise."""
-        rng = self.vitals_rng
 
         def drift(value: float, name: str, jitter: float) -> float:
             lo, hi = p.vital_range(name)
@@ -140,9 +150,9 @@ class PatientGenerator:
                 v.gcs -= 1
         return _clamp(v)
 
-    def deteriorate(self, v: Vitals) -> Vitals:
+    @staticmethod
+    def deteriorate(v: Vitals, rng: random.Random) -> Vitals:
         """Step change at the moment of deterioration."""
-        rng = self.vitals_rng
         return _clamp(Vitals(
             heart_rate=v.heart_rate + rng.randint(15, 28),
             systolic_bp=v.systolic_bp - rng.randint(15, 30),
@@ -168,6 +178,8 @@ class PatientGenerator:
         history = f"PMHx: {pmh}. Meds: {meds}."
         note = rng.choice(p.notes).format(age=age, sex=sex)
         ambulance = rng.random() < p.ambulance_prob
+        walk_in = not ambulance
+        admitted = rng.random() < p.admit_prob
 
         return NewPatient(
             presentation=p,
@@ -185,6 +197,17 @@ class PatientGenerator:
             triage_note=note,
             fragility=rng.expovariate(1.0),
             vitals=self.initial_vitals(p),
+            assess_min=rng.uniform(*ASSESS_MIN[p.ctas]),
+            treatment_min=rng.uniform(*p.treatment_min),
+            admitted=admitted,
+            # Access block: admitted patients board in ED beds for 4-12h,
+            # the main driver of crowding in Canadian EDs.
+            boarding_min=rng.uniform(240, 720) if admitted else 0.0,
+            patience_min=(
+                float("inf") if not walk_in
+                else 120 + rng.expovariate(1 / (720 if p.ctas <= 2 else 480))
+            ),
+            vitals_seed=rng.getrandbits(64),
         )
 
 

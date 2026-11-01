@@ -20,6 +20,19 @@ from dataclasses import dataclass, field
 # Time-to-physician targets per CTAS level, in minutes (CTAS guidelines).
 CTAS_TARGET_MIN = {1: 0, 2: 15, 3: 30, 4: 60, 5: 120}
 
+
+
+def effective_target_min(level: int) -> int:
+    """CTAS target with a small floor so "immediate" is measurable."""
+    return max(CTAS_TARGET_MIN[level], 5)
+
+
+# Physician time for the initial assessment, by acuity, in minutes.
+ASSESS_MIN = {1: (45, 75), 2: (30, 50), 3: (20, 40), 4: (10, 25), 5: (8, 15)}
+
+# Walk-in SLO: arrival to physician within 4 hours.
+WALK_IN_SLO_MIN = 240
+
 # Waiting-room reassessment intervals per CTAS level, in minutes.
 CTAS_REASSESS_MIN = {1: 5, 2: 15, 3: 30, 4: 60, 5: 120}
 

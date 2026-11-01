@@ -1,6 +1,6 @@
 import argparse
 import asyncio
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from er_triage.config import get_settings
 
@@ -43,6 +43,8 @@ def main() -> None:
 
 async def _simulate(args: argparse.Namespace) -> None:
     from er_triage.events import build_bus
+    from er_triage.models import EncounterStatus
+    from er_triage.sim.ed import WAITING
     from er_triage.sim.feed import FeedEngine
 
     settings = get_settings()
@@ -60,12 +62,41 @@ async def _simulate(args: argparse.Namespace) -> None:
     print(f"run {run_id}: {args.minutes:g} sim minutes at {engine.clock.speed:g}x "
           f"(~{args.minutes / engine.clock.speed:.0f}s real)")
     engine.start()
+    end = engine.clock.start + timedelta(minutes=args.minutes)
     try:
-        while (engine.clock.now() - engine.clock.start).total_seconds() / 60 < args.minutes:
+        while engine.clock.now() < end:
             await asyncio.sleep(engine.tick_seconds)
-            n = len(engine.active) // 2
-            print(f"  {engine.clock.now():%a %H:%M}  patients: {n:4d}  "
-                  f"events: {bus.stats.emitted}", flush=True)
+            line = "  ".join(
+                f"{arm.value:>8}: wait {len(a.by_status(*WAITING)):3d} "
+                f"treat {len(a.by_status(EncounterStatus.IN_TREATMENT)):3d} "
+                f"breach {a.counters.slo_breaches:3d}"
+                for arm, a in engine.arms.items()
+            )
+            print(f"  {engine.clock.now():%a %H:%M}  {line}", flush=True)
     finally:
         await engine.stop()
         await bus.aclose()
+    _scorecard(engine, end)
+
+
+def _scorecard(engine, t: datetime) -> None:
+    from er_triage.db import session_scope
+
+    rows = {}
+    with session_scope() as s:
+        for arm, ed in engine.arms.items():
+            rows[arm.value] = ed.snapshot(s, engine.run_id, t, window_min=float("inf"))
+    labels = [
+        ("seen", "Patients seen"),
+        ("avg_wait_min", "Avg wait to physician (min)"),
+        ("p90_wait_min", "P90 wait to physician (min)"),
+        ("slo_breaches", "Walk-in 4h SLO breaches"),
+        ("ctas_target_misses", "Seen after true CTAS target"),
+        ("under_triaged", "Under-triaged at intake"),
+        ("deteriorations", "Deteriorated while waiting"),
+        ("lwbs", "Left without being seen"),
+        ("waiting", "Still waiting at end"),
+    ]
+    print(f"\n  {'':32}{'baseline':>10}{'ai':>10}")
+    for key, label in labels:
+        print(f"  {label:32}{rows['baseline'][key]:>10}{rows['ai'][key]:>10}")

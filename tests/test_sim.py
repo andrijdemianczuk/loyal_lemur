@@ -1,3 +1,4 @@
+import random
 import time
 from collections import Counter
 from datetime import UTC, datetime, timedelta
@@ -50,7 +51,7 @@ def test_night_is_quieter_than_day():
     assert day > 3 * night
 
 
-def test_same_seed_same_arrivals_regardless_of_vitals_rechecks():
+def test_same_seed_same_arrivals():
     def arrivals(rechecks: int):
         gen = PatientGenerator(seed=99)
         out = []
@@ -59,7 +60,7 @@ def test_same_seed_same_arrivals_regardless_of_vitals_rechecks():
                                               START + timedelta(hours=h + 1)):
                 p = gen.new_patient(t)
                 for _ in range(rechecks):
-                    gen.recheck_vitals(p.presentation, p.vitals, deteriorated=False)
+                    gen.recheck_vitals(p.presentation, p.vitals, False, random.Random(p.vitals_seed))
                 out.append((t, p.mrn, p.presentation.code, p.last_name))
         return out
 
