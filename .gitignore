@@ -1,0 +1,6 @@
+/.venv/
+/.key
+.env
+/var/
+__pycache__/
+.pytest_cache/
