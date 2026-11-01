@@ -28,7 +28,7 @@ def test_patient_has_encounter_per_arm(run):
             run_id=run.id, mrn="M0001", health_card_no="1234-567-890", first_name="Test",
             last_name="Patient", date_of_birth=date(1970, 1, 1), sex="F", postal_code="T2P 1J9",
             arrival_mode=ArrivalMode.WALK_IN, arrived_at=arrived, chief_complaint="chest pain",
-            true_ctas=2,
+            presentation_code="L2_CHEST_PAIN_CARDIAC", true_ctas=2, fragility=1.0,
         )
         p.encounters = [Encounter(run_id=run.id, arm=arm, arrived_at=arrived) for arm in Arm]
         s.add(p)

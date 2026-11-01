@@ -102,10 +102,14 @@ class Patient(Base):
     arrival_mode: Mapped[ArrivalMode] = mapped_column(String(16))
     arrived_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     chief_complaint: Mapped[str] = mapped_column(String(128))
+    triage_note: Mapped[str] = mapped_column(Text, default="")
     history: Mapped[str] = mapped_column(Text, default="")
-    # Ground-truth acuity known only to the simulator; used for scoring, never
-    # shown to either triage arm.
+
+    # Simulator ground truth, used for scoring and never shown to either
+    # triage arm.
+    presentation_code: Mapped[str] = mapped_column(String(32))
     true_ctas: Mapped[int] = _ctas()
+    fragility: Mapped[float]  # latent deterioration threshold
 
     encounters: Mapped[list["Encounter"]] = relationship(back_populates="patient")
 
@@ -142,6 +146,7 @@ class Encounter(Base):
 
     # Deterioration while waiting can raise effective acuity above true_ctas.
     current_ctas: Mapped[int | None] = _ctas(nullable=True)
+    deteriorated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
     patient: Mapped[Patient] = relationship(back_populates="encounters")
     vitals: Mapped[list["VitalSigns"]] = relationship(back_populates="encounter")

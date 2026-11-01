@@ -1,8 +1,9 @@
 """In-process event bus with background batching.
 
-``emit`` is synchronous and never blocks or raises, so the simulator can call
-it from hot paths. A background task flushes batches to every sink; a slow or
-failing sink cannot stall the simulation. If the buffer overflows, the oldest
+``emit`` is synchronous, thread-safe, and never blocks or raises, so the
+simulator can call it from hot paths and worker threads. A background task
+flushes batches to every sink; a slow or failing sink cannot stall the
+simulation. If the buffer overflows, the oldest
 events are dropped and counted.
 """
 
@@ -47,6 +48,7 @@ class EventBus:
         self._max_buffer = max_buffer
         self._task: asyncio.Task[None] | None = None
         self._wake = asyncio.Event()
+        self._loop: asyncio.AbstractEventLoop | None = None
         self.stats = BusStats(sinks={s.name: SinkStats() for s in sinks})
 
     def emit(self, event_type: EventType, data: dict[str, Any] | None = None, **envelope: Any) -> Event:
@@ -56,12 +58,14 @@ class EventBus:
             self.stats.dropped += 1
         self._buffer.append(event)
         self.stats.emitted += 1
-        if len(self._buffer) >= self.batch_size:
-            self._wake.set()
+        if len(self._buffer) >= self.batch_size and self._loop is not None:
+            # emit may be called from worker threads (e.g. DB-bound sim ticks).
+            self._loop.call_soon_threadsafe(self._wake.set)
         return event
 
     def start(self) -> None:
         if self._task is None:
+            self._loop = asyncio.get_running_loop()
             self._task = asyncio.create_task(self._run(), name="event-bus")
 
     async def _run(self) -> None:

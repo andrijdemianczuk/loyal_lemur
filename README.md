@@ -34,10 +34,38 @@ uv sync
 uv run er-triage initdb
 uv run er-triage serve          # http://127.0.0.1:8000/health
 uv run pytest
+
+# Headless synthetic feed: 8 simulated hours at 60 sim-minutes per second
+uv run er-triage simulate --minutes 480 --speed 60 --seed 42
 ```
 
 Put your Anthropic API key in `.key` (gitignored). Copy `.env.example` to
 `.env` to change settings.
+
+## Synthetic EHR feed
+
+`src/er_triage/sim/` generates a live patient stream:
+
+- **Arrivals:** Poisson process (~150 visits/day by default) shaped by a
+  time-of-day curve: quiet overnight, peak late morning through evening.
+  `--surge` multiplies the rate.
+- **Presentations:** ~30 CEDIS-style chief complaints with a CTAS mix of
+  roughly 1/12/40/33/14% for levels 1-5, realistic vitals, triage narratives,
+  paired history and medications, and arrival mode (ambulance share rises
+  with acuity).
+- **Subtle presentations:** dangerous conditions that look benign at the
+  front desk (atypical ACS, subarachnoid hemorrhage, ectopic pregnancy,
+  anticoagulated head injury). This is where decision support adds value.
+- **Deterioration:** each patient has a latent fragility. Risk accumulates
+  while they wait and escalates once they pass their CTAS target. A patient
+  who deteriorates moves up one acuity level, with matching vital-sign changes.
+  Fragility is drawn once per patient, so both ED arms face the same patient.
+- **Reproducibility:** arrivals and vitals use separate random streams, so a
+  seed always produces the same patients however each arm behaves.
+
+Ground truth (`true_ctas`, `presentation_code`, `fragility`) is stored for
+scoring and is never shown to either triage arm. All data is synthetic and
+simplified; it is not clinical guidance.
 
 ## Event stream
 
