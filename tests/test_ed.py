@@ -61,7 +61,7 @@ def _cleanup(*engines: FeedEngine) -> None:
 def test_arms_are_independent(db):
     """Changing only the AI arm must not change a single baseline outcome."""
     a = _run(12, seed=11)
-    b = _run(12, seed=11, ai_config=dataclasses.replace(EDConfig(), intake_chairs=6))
+    b = _run(12, seed=11, ai_config=dataclasses.replace(EDConfig(), intake_mode="off"))
     try:
         def baseline(e):
             with session_scope() as s:
@@ -98,7 +98,7 @@ def test_flow_invariants(db):
                     assert enc.physician_seen_at is None
         for arm in engine.arms.values():
             # Recognized resuscitation cases are seen almost immediately.
-            for rec in arm.counters.seen_log:
+            for rec in arm.counters.waits:
                 if rec.arrival_ctas == 1:
                     assert rec.wait_min < 10
             limit = cfg.main_beds + cfg.hallway_spaces + 2  # + resus overflow

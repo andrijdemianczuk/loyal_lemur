@@ -8,6 +8,7 @@ long. Everything is persisted to Postgres and published on the event bus.
 """
 
 import asyncio
+import dataclasses
 import logging
 import random
 import uuid
@@ -50,6 +51,7 @@ class FeedEngine:
         arrival_multiplier: float = 1.0,
         tick_seconds: float = 1.0,
         ed_config: EDConfig | None = None,
+        ai_ed_config: EDConfig | None = None,
         ai_triager: Triager | None = None,
     ) -> None:
         self.bus = bus
@@ -60,14 +62,17 @@ class FeedEngine:
         self.arrival_multiplier = arrival_multiplier
         self.tick_seconds = tick_seconds
         self.ed_config = ed_config or EDConfig()
+        # Same resources; the AI arm only changes how the intake zone is used.
+        self.ai_ed_config = ai_ed_config or dataclasses.replace(
+            self.ed_config, intake_mode="dynamic")
         self.run_id: uuid.UUID | None = None
         nurse_rng = random.Random(None if seed is None else seed + 2)
         self.arms = {
             Arm.BASELINE: EDArm(Arm.BASELINE, NurseTriager(nurse_rng), CtasFifoPolicy(),
                                 self.ed_config, self._emit),
             Arm.AI: EDArm(Arm.AI, ai_triager or RulesTriager(),
-                          SloAwarePolicy(self.ed_config.slo_guard_min),
-                          self.ed_config, self._emit),
+                          SloAwarePolicy(self.ai_ed_config.slo_guard_min),
+                          self.ai_ed_config, self._emit),
         }
         self._last_tick = sim_start
         self._next_snapshot = sim_start + SNAPSHOT_EVERY
@@ -80,7 +85,7 @@ class FeedEngine:
             "daily_volume": self.generator.daily_volume,
             "arrival_multiplier": self.arrival_multiplier,
             "tick_seconds": self.tick_seconds,
-            "ed": self.ed_config.__dict__,
+            "ed": {arm.value: a.config.__dict__ for arm, a in self.arms.items()},
             "policies": {arm.value: a.policy.name for arm, a in self.arms.items()},
         }
         with session_scope() as s:

@@ -63,9 +63,16 @@ class EDConfig:
     # Fast-track patients needing longer workup move to an internal results
     # area rather than holding a chair.
     fast_track_chair_max_min: float = 60
-    # Rapid assessment zone: when main beds are full, idle main physicians
-    # assess stable walk-ins in intake chairs. 0 disables it.
-    intake_chairs: int = 0
+    # Rapid assessment zone: idle main physicians assess stable walk-ins in
+    # intake chairs. "scheduled" opens it during fixed hours (typical static
+    # policy); "dynamic" opens it whenever there are idle physicians and
+    # waiting walk-ins (decision-support recommendation); "off" disables it.
+    intake_chairs: int = 3
+    intake_mode: str = "scheduled"
+    intake_hours: tuple[int, int] = (11, 21)
+    # Internal results-waiting area shared by fast track and intake patients
+    # whose workup outlasts their chair time. When full, those lanes stall.
+    results_area_capacity: int = 10
     deteriorated_treatment_factor: float = 1.5
     slo_guard_min: float = 180  # AI policy: escalate walk-ins waiting this long
 
@@ -168,12 +175,16 @@ class SloAwarePolicy:
 
 
 @dataclass
-class SeenRecord:
+class WaitRecord:
+    """A completed wait: seen by a physician, or left without being seen.
+    Walk-outs are kept so an ED can't look faster by losing patients."""
+
     at: datetime
     wait_min: float
     arrival_ctas: int  # true acuity on arrival
-    current_ctas: int  # true acuity when seen, after any deterioration
+    current_ctas: int  # true acuity at the end of the wait
     walk_in: bool
+    left: bool = False
 
 
 @dataclass
@@ -184,7 +195,7 @@ class ArmCounters:
     under_triaged: int = 0
     deteriorations: int = 0
     lwbs: int = 0
-    seen_log: list[SeenRecord] = field(default_factory=list)
+    waits: list[WaitRecord] = field(default_factory=list)
 
 
 class EDArm:
@@ -226,6 +237,22 @@ class EDArm:
     def fast_track_open(self, t: datetime) -> bool:
         start, end = self.config.fast_track_hours
         return start <= t.hour < end
+
+    def intake_open(self, t: datetime) -> bool:
+        match self.config.intake_mode:
+            case "dynamic":
+                return self.config.intake_chairs > 0
+            case "scheduled":
+                start, end = self.config.intake_hours
+                return self.config.intake_chairs > 0 and start <= t.hour < end
+            case _:
+                return False
+
+    def results_area_occupied(self, t: datetime) -> int:
+        return sum(1 for e in self.encounters.values()
+                   if e.status == EncounterStatus.IN_TREATMENT
+                   and e.lane in (Lane.FAST_TRACK, Lane.INTAKE)
+                   and e.resource_free_at <= t < e.depart_at)
 
     # -- lifecycle hooks called by the feed engine -------------------------
 
@@ -333,6 +360,11 @@ class EDArm:
         for enc in self.by_status(*WAITING):
             if enc.walk_in and enc.wait_minutes(t) > enc.patient.patience_min:
                 self.counters.lwbs += 1
+                self.counters.target_misses += (
+                    enc.wait_minutes(t) > effective_target_min(enc.current_ctas))
+                self.counters.waits.append(WaitRecord(
+                    t, enc.wait_minutes(t), enc.presentation.ctas, enc.current_ctas,
+                    enc.walk_in, left=True))
                 self._depart(s, enc, EncounterStatus.LWBS, t)
 
     def _depart(self, s: Session, enc: ActiveEncounter, status: EncounterStatus,
@@ -370,7 +402,7 @@ class EDArm:
         if not main_q:
             main_q = [e for e in fast_q if e.status == EncounterStatus.WAITING_PHYSICIAN]
         self._fill(s, t, Lane.MAIN, main_q)
-        if self.config.intake_chairs:
+        if self.intake_open(t):
             intake_q = [e for e in waiting
                         if e.status == EncounterStatus.WAITING_PHYSICIAN and e.walk_in
                         and e.assigned_ctas >= 3 and not e.deteriorated]
@@ -389,6 +421,9 @@ class EDArm:
             if self.occupied(lane, t) >= capacity:
                 if emergent:
                     continue
+                return
+            if (lane != Lane.MAIN
+                    and self.results_area_occupied(t) >= self.config.results_area_capacity):
                 return
             self._see(s, enc, lane, t)
             doctors[doc] = t + timedelta(minutes=enc.patient.assess_min)
@@ -415,8 +450,8 @@ class EDArm:
         c = self.counters
         c.seen += 1
         c.target_misses += wait > target
-        c.seen_log.append(SeenRecord(t, wait, enc.presentation.ctas, enc.current_ctas,
-                                     enc.walk_in))
+        c.waits.append(WaitRecord(t, wait, enc.presentation.ctas, enc.current_ctas,
+                                  enc.walk_in))
 
         row = s.get(Encounter, enc.encounter_id)
         row.status = enc.status
@@ -452,23 +487,23 @@ class EDArm:
     def snapshot(self, s: Session, run_id: uuid.UUID, t: datetime,
                  window_min: float = 60) -> dict[str, Any]:
         c = self.counters
-        recent = [r.wait_min for r in c.seen_log
+        recent = [r.wait_min for r in c.waits
                   if (t - r.at).total_seconds() / 60 <= window_min]
         waiting = self.by_status(*WAITING)
         walk_in_waits = [e.wait_minutes(t) for e in waiting if e.walk_in]
         by_ctas: dict[str, dict[str, float]] = {}
         # Grouped by true acuity on arrival; misses are judged against the
-        # acuity when seen, so waiting until deterioration counts as a miss.
+        # acuity at the end of the wait, so deteriorating counts as a miss.
         for level in range(1, 6):
-            seen = [r for r in c.seen_log if r.arrival_ctas == level]
-            waits = [r.wait_min for r in seen]
+            done = [r for r in c.waits if r.arrival_ctas == level]
+            waits = [r.wait_min for r in done]
             by_ctas[str(level)] = {
                 "waiting": sum(1 for e in waiting if e.presentation.ctas == level),
-                "seen": len(seen),
+                "seen": sum(1 for r in done if not r.left),
                 "avg_wait_min": round(statistics.fmean(waits), 1) if waits else 0.0,
                 "p90_wait_min": round(_percentile(waits, 90), 1),
                 "target_misses": sum(
-                    1 for r in seen if r.wait_min > effective_target_min(r.current_ctas)),
+                    1 for r in done if r.wait_min > effective_target_min(r.current_ctas)),
             }
         metrics = {
             "waiting": len(waiting),

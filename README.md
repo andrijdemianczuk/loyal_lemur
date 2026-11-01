@@ -67,6 +67,34 @@ Ground truth (`true_ctas`, `presentation_code`, `fragility`) is stored for
 scoring and is never shown to either triage arm. All data is synthetic and
 simplified; it is not clinical guidance.
 
+## Two-arm ED model
+
+`src/er_triage/sim/ed.py`. Both arms get **identical resources**: 5 main
+physicians, 20 beds (+4 hallway stretchers for CTAS 1-2 only), resus
+bypass, a fast track (1 physician, 4 chairs, 09:00-23:00), a 3-chair intake
+zone, a 10-space results-waiting area, and 2 triage nurses. Admitted
+patients board for 4-12h (access block). They differ only in decisions:
+
+|                 | Baseline (manual)                    | AI-assisted                                   |
+|-----------------|--------------------------------------|-----------------------------------------------|
+| Triage          | Nurse model with realistic error     | Decision support (rules now; Claude in Phase 4) |
+| Reassessment    | Notices deterioration ~50% of time   | Re-scores at every vitals check               |
+| Queue order     | CTAS, then first-come-first-served   | CTAS 1-2 first; walk-ins near SLO; then % of target elapsed |
+| Fast track      | Assigned CTAS 4-5                    | Also stable ambulatory CTAS 3 under 65        |
+| Intake zone     | Fixed hours (11:00-21:00)            | Opened dynamically when physicians are idle   |
+
+Every per-patient outcome (treatment time, admission, boarding, patience,
+deterioration threshold, vitals noise) is drawn once and shared by both
+arms; a test proves changing one arm cannot change the other. Performance
+is scored against **true** acuity, and patients who leave without being
+seen keep their wait in the statistics so an ED can't look faster by
+losing patients.
+
+Calibrated result (rules-based AI arm, mean of 8 simulated days): average
+wait to physician -40%, walk-in 4h SLO breaches 6.5/day to 0,
+deteriorations while waiting -43%, LWBS -83%. Under a 1.25x surge: -15%
+average wait, -55% SLO breaches, at the cost of +15% CTAS target misses.
+
 ## Event stream
 
 Every clinical and operational event (arrivals, vitals, triage decisions,
