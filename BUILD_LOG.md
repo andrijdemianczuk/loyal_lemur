@@ -31,6 +31,7 @@ them against the SLI/SLO:
 | 5 | Live web dashboard; steady-state recalibration | Done |
 | 6 | Demo polish: warm start, scenarios, scripts, push | In progress |
 | 6a | Deterioration investigation; early bed requests | Done |
+| 6b | 12-day validation, literature check, demo script, dry run | Done |
 | 7 | Event-pipeline integration (optional) | Not started |
 
 ---
@@ -393,16 +394,34 @@ Costs are at the list prices in our price table.
 
 ### End of day state
 
-- 27 tests passing.
-- Commits `d4f6a6e`, `80ddf60` and `9f238ae` are local only (not pushed).
+**Summary of the day:**
+- Demos open on a warmed-up ED at 14:00.
+- We found and fixed the deterioration problem with early bed requests, and validated the result over 12 recorded days.
+- The literature check supports the 60-minute assumption.
+- The demo script is written, dry-run tested and fixed.
+
+**State:**
+- 28 tests passing.
+- Everything through `08f84a7` is pushed to GitHub.
 - The database needs `ALTER TABLE triage_assessments ADD COLUMN admit_predicted boolean`.
   It is already applied locally; `initdb` on a fresh database creates it.
-- Recorded demo seeds (`ctas-v2`), all opening Fri 14:00:
+- Recorded demo runs (`ctas-v2`), all opening Fri 14:00:
   - seeds 1–12 at normal volume
   - seeds 3 and 7 at 1.5× surge
-- Demo seed: **8** (backup **4**).
-- 28 tests passing.
-- `docs/DEMO_SCRIPT.md` is filled in with the 12-day numbers and the evidence answer.
+  - they live in the local `llm_responses` table, not in the repo
+- Demo: seed **8**, backup **4**. The dashboard was left ready to rehearse: seed 8, paused at Fri 14:00, server on port 8765.
+- Deliverables for the presentation:
+  - `docs/DEMO_SCRIPT.md`: the delivery script and Q&A
+  - this log: the day-2 story, results and lessons learned
+- Analysis helpers (gitignored) in `var/analysis/`:
+  - `pick.py` ranks seeds
+  - `timeline.py` gives hourly metrics per seed
+  - `dryrun.py` samples the live dashboard
+
+**Next session:**
+1. Timed in-person rehearsal at the target screen resolution. Adjust the script from it.
+2. README refresh: how to run, record and replay, and the headline results.
+3. Scenario presets with time-limited surges, if there's time before presenting.
 
 ---
 
@@ -492,16 +511,16 @@ something to learn.
 - [x] **Recorded seeds** matching the UI defaults: 3 and 7, normal and surge, opening 14:00 (day 2).
 - [x] **Deterioration fix:** early bed requests from admission prediction (day 2).
 - [ ] **Scenario presets:** time-limited surges (e.g. a 3–4 h evening rush). A 24-hour 1.5× surge overwhelms both EDs, which isn't realistic. Pre-record each preset.
-- [x] **Choose demo seeds:** 8 (backup 5), from 12 recorded days (day 2).
+- [x] **Choose demo seeds:** 8 (backup 4), from 12 recorded days (day 2).
 - [x] **Check the 60-minute boarding assumption:** it's conservative against the published simulations (day 2).
 - [x] **Dry run of the delivery script** (day 2): found 5 issues, all fixed.
 - [ ] **Rehearse the script** in person end to end, timed, at the target screen resolution.
 - [ ] **Optional realism:** make walk-outs more likely after very long overnight waits.
 - [ ] **Optional realism:** give false-positive bed requests a cost (idle inpatient bed time).
-- [ ] **Narrative content** for each profile (`value-pitch`, `pipeline-pitch`).
-- [ ] **Demo scripts:** one 3-minute walkthrough per profile.
+- [x] **Demo script** (day 2): `docs/DEMO_SCRIPT.md`, a 10-minute slot with a 3-minute live segment, plus a pipeline-pitch add-on and Q&A.
+- [ ] **Narrative panel text** per profile in the dashboard ("Why it matters" is generic today).
 - [ ] **README refresh.**
-- [ ] **Push to GitHub** (needs explicit approval).
+- [x] **Push to GitHub** (day 2, `08f84a7`).
 
 ### Phase 7: Event-pipeline integration (optional)
 
