@@ -185,8 +185,7 @@ and we fixed the cause instead of the metric.**
 
 **1. The problem.** The first recordings showed the AI ED with *more*
 patients deteriorating while waiting on normal days (8 → 12 and 11 → 18).
-Yesterday's 4-seed average had shown −38%. A clinician on an interview
-panel would catch this immediately.
+Yesterday's 4-seed average had shown −38%. A clinician in the audience would catch this immediately.
 
 **2. First finding: Claude's caution crowded the CTAS 2 queue.**
 - Claude assigned CTAS 2 to 27 patients whose ground truth was CTAS 3,
