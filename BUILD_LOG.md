@@ -411,7 +411,7 @@ Costs are at the list prices in our price table.
   - they live in the local `llm_responses` table, not in the repo
 - Demo: seed **8**, backup **4**. The dashboard was left ready to rehearse: seed 8, paused at Fri 14:00, server on port 8765.
 - Deliverables for the presentation:
-  - `docs/DEMO_SCRIPT.md`: the delivery script and Q&A
+  - `docs/DEMO_SCRIPT.md`: the delivery script and Q&A, organized around the four AI-backed decisions (who is most urgent, who is seen next, when to open capacity, who will need a bed), with a presenter's decision map (`0852d04`)
   - this log: the day-2 story, results and lessons learned
 - Analysis helpers (gitignored) in `var/analysis/`:
   - `pick.py` ranks seeds
