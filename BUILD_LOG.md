@@ -310,6 +310,78 @@ Costs are at the list prices in our price table.
 
 ---
 
+## Lessons learned (running list)
+
+Things we would tell someone building a similar system. Each one cost us
+something to learn.
+
+### About the domain
+
+1. **Better triage alone doesn't reduce harm; it reshuffles who waits.**
+   Accurate triage decides *who* waits. Wait times and deteriorations only
+   fall when the AI also frees capacity: the dynamic intake zone, fast-track
+   streaming, and early bed requests. (Days 1–2)
+2. **Find the binding constraint before you optimize.** We tried five
+   queue-ordering ideas against deteriorations. None worked, not even
+   ordering by each patient's *true* risk. The constraint was main beds
+   blocked by boarders, and no ordering can create a bed. (Day 2)
+3. **Over-triage has a cost.** Claude's caution was clinically defensible
+   (anticoagulated head injuries at CTAS 2). It still doubled the CTAS 2
+   queue and slowed the truly emergent patients. "Err on the side of
+   caution" has to be weighed against the capacity it consumes. (Day 2)
+4. **Ground truth can be debatable.** Our simulator labels the anticoagulated
+   head injury CTAS 3; many clinicians would say CTAS 2. When the AI
+   "disagrees" with the label, check the label too. (Day 2)
+
+### About measurement
+
+5. **Measure steady state, never from empty.** Day-1 numbers from an empty
+   ED looked fine, then collapsed over several days. Hence the warm start. (Days 1–2)
+6. **Count what leaves.** Patients who walk out can no longer deteriorate
+   or breach an SLO, so an ED can look safer by losing them. We count
+   walk-outs' waits, and we report "left without being seen" next to
+   deteriorations. (Days 1–2)
+7. **Rolling windows mislead on a live dashboard.** A "last hour" average
+   showed the AI ED 32% slower while it had fewer SLO breaches. Headline
+   numbers should be cumulative since opening. (Day 2)
+8. **Small samples lie.** Average waits ranged from 10 to 260 minutes across
+   12 simulated days. Two seeds were not enough to judge a policy. We
+   compare across 12 days and demo days that are representative of the
+   average, and we say so. (Day 2)
+9. **Credible beats dramatic.** We calibrated to published improvement
+   ranges (about 20–40%) rather than chasing bigger numbers. A clinical
+   audience discounts results that look too good. (Day 1)
+
+### About method
+
+10. **Use diagnostics before building.** "Oracle" experiments, which are
+    allowed to use ground truth but would never ship, told us the upper
+    bound of an idea before we spent effort on it. Ordering by true risk did
+    nothing, and a perfect admission prediction was worth −31%. (Day 2)
+11. **Report the failed experiments too.** The rejected hypotheses are what
+    make the final result believable. (Day 2)
+12. **Show the ceiling, not just the score.** Admission prediction at 77%
+    sounds mediocre until you see that 81% is the best possible, because
+    dispositions are random given the presentation. (Day 2)
+
+### About engineering
+
+13. **Record-and-replay makes LLM demos deterministic and nearly free.** Total
+    API spend for the project so far is a few dollars. Replays are exact,
+    so demos can't be derailed by latency, outages or randomness. (Days 1–2)
+14. **Cache keys pin recordings to every input.** Changing the start time or
+    the prompt invalidates recordings. We recorded twice on day 2; settle
+    the design first, then record. Version the prompt explicitly. (Day 2)
+15. **Verify that background jobs actually started.** A zsh word-splitting
+    mistake made a batch of recordings fail instantly. It cost nothing but
+    time, because we checked the logs before waiting. (Day 2)
+16. **Build guardrails into the AI path from the start.** Claude can never
+    triage below the vital-sign rules, any error falls back to rules, and
+    late decisions are logged rather than silently dropped. This is what
+    lets the AI be fast without being fragile. (Day 1)
+
+---
+
 ## Remaining work
 
 ### Phase 6: Demo polish (next)
