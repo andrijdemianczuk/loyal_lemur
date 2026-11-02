@@ -399,17 +399,19 @@ Costs are at the list prices in our price table.
 - We found and fixed the deterioration problem with early bed requests, and validated the result over 12 recorded days.
 - The literature check supports the 60-minute assumption.
 - The demo script is written, dry-run tested and fixed.
+- The script is reworked around the core question: *which decisions, backed by AI, need to be made to improve wait times?* It's told as four decisions: who is most urgent, who is seen next, when to open capacity, and who will need a bed.
 
 **State:**
 - 28 tests passing.
-- Everything through `08f84a7` is pushed to GitHub.
+- Everything through `73c0937` is pushed to GitHub. This end-of-day update is the only later commit.
 - The database needs `ALTER TABLE triage_assessments ADD COLUMN admit_predicted boolean`.
   It is already applied locally; `initdb` on a fresh database creates it.
 - Recorded demo runs (`ctas-v2`), all opening Fri 14:00:
   - seeds 1–12 at normal volume
   - seeds 3 and 7 at 1.5× surge
   - they live in the local `llm_responses` table, not in the repo
-- Demo: seed **8**, backup **4**. The dashboard was left ready to rehearse: seed 8, paused at Fri 14:00, server on port 8765.
+- Demo: seed **8**, backup **4**.
+- Shut down for the day: Postgres stopped (`brew services stop postgresql@17`) and the dashboard server stopped.
 - Deliverables for the presentation:
   - `docs/DEMO_SCRIPT.md`: the delivery script and Q&A, organized around the four AI-backed decisions (who is most urgent, who is seen next, when to open capacity, who will need a bed), with a presenter's decision map (`0852d04`)
   - this log: the day-2 story, results and lessons learned
@@ -419,9 +421,13 @@ Costs are at the list prices in our price table.
   - `dryrun.py` samples the live dashboard
 
 **Next session:**
-1. Timed in-person rehearsal at the target screen resolution. Adjust the script from it.
-2. README refresh: how to run, record and replay, and the headline results.
-3. Scenario presets with time-limited surges, if there's time before presenting.
+1. Start up:
+   - `brew services start postgresql@17`
+   - start the server with `nohup` (see the script's "Before the call")
+   - set up seed 8, paused at Fri 14:00
+2. Timed in-person run-through of the four-decision script at the target screen resolution. Adjust the script from it.
+3. README refresh: how to run, record and replay, and the headline results.
+4. Scenario presets with time-limited surges, if there's time before presenting.
 
 ---
 
