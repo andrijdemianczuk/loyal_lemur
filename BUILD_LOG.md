@@ -425,9 +425,30 @@ Costs are at the list prices in our price table.
    - `brew services start postgresql@17`
    - start the server with `nohup` (see the script's "Before the call")
    - set up seed 8, paused at Fri 14:00
-2. Timed in-person run-through of the four-decision script at the target screen resolution. Adjust the script from it.
-3. README refresh: how to run, record and replay, and the headline results.
-4. Scenario presets with time-limited surges, if there's time before presenting.
+2. **Make the four decisions visible on the dashboard: an "AI decisions" panel.**
+   Today the screen mostly shows outcomes. Decision 3 (opening the
+   rapid-assessment zone) is only an "open/closed" word in the capacity line,
+   and decision 2 only shows indirectly through the walk-in chart. Log each
+   decision as it happens, with its reason. For example:
+   - "16:29 bed requested at triage: 81F hip fracture"
+   - "21:00 kept rapid-assessment zone open: 2 physicians free, 5 walk-ins waiting"
+   - "19:40 moved walk-in ahead: waiting 3 h 10, approaching the 4 h limit"
+   - triage calls that raised acuity above the rules
+
+   The decisions should also be emitted as events, so the pipeline-pitch
+   profile can use them. Then update the script's live segment to point at
+   the panel.
+3. **Measure what each decision contributes.** Run all 12 recorded days with
+   each AI decision switched off in turn: Claude triage → rules, SLO-aware queue →
+   acuity-then-first-come, dynamic intake zone → scheduled hours, early bed
+   requests → off. Report the change in average and P90 wait, SLO breaches,
+   deteriorations and walk-outs. This replays from the existing recordings at
+   no API cost (today's experiments had 0 cache misses), but check fallbacks
+   per run. The result replaces the hedged "which decision matters most?" Q&A
+   answer and becomes a slide: "what each decision is worth".
+4. Timed in-person run-through of the four-decision script at the target screen resolution, after 2 and 3. Adjust the script from it.
+5. README refresh: how to run, record and replay, and the headline results.
+6. Scenario presets with time-limited surges, if there's time before presenting.
 
 ---
 
@@ -520,13 +541,15 @@ something to learn.
 - [x] **Choose demo seeds:** 8 (backup 4), from 12 recorded days (day 2).
 - [x] **Check the 60-minute boarding assumption:** it's conservative against the published simulations (day 2).
 - [x] **Dry run of the delivery script** (day 2): found 5 issues, all fixed.
+- [ ] **"AI decisions" panel:** make all four decisions visible as they happen, with reasons, and emit them as events (next session).
+- [ ] **Decision ablation:** what each decision contributes, over 12 days, replayed at no API cost (next session).
 - [ ] **Rehearse the script** in person end to end, timed, at the target screen resolution.
 - [ ] **Optional realism:** make walk-outs more likely after very long overnight waits.
 - [ ] **Optional realism:** give false-positive bed requests a cost (idle inpatient bed time).
 - [x] **Demo script** (day 2): `docs/DEMO_SCRIPT.md`, a 10-minute slot with a 3-minute live segment, plus a pipeline-pitch add-on and Q&A.
 - [ ] **Narrative panel text** per profile in the dashboard ("Why it matters" is generic today).
 - [ ] **README refresh.**
-- [x] **Push to GitHub** (day 2, `08f84a7`).
+- [x] **Push to GitHub** (day 2, through `3f5b6fe`).
 
 ### Phase 7: Event-pipeline integration (optional)
 
