@@ -12,6 +12,7 @@ import dataclasses
 import logging
 import random
 import threading
+import time
 import uuid
 from datetime import datetime, timedelta
 
@@ -88,10 +89,12 @@ class FeedEngine:
         # Held while a step mutates state; readers (the web UI) take it too.
         self.lock = threading.Lock()
         self.stop_at: datetime | None = None  # optional end of simulated time
+        self._muted = False  # suppress event output (during warm-up)
+        self.warmup: dict | None = None  # summary of the last warm-up
 
     # -- lifecycle -------------------------------------------------------------
 
-    def create_run(self) -> uuid.UUID:
+    def create_run(self, *, announce: bool = True) -> uuid.UUID:
         config = {
             "daily_volume": self.generator.daily_volume,
             "arrival_multiplier": self.arrival_multiplier,
@@ -108,9 +111,12 @@ class FeedEngine:
             s.add(run)
             s.flush()
             self.run_id = run.id
-        self._emit(EventType.RUN_STARTED, self.clock.start, {
-            "scenario": self.scenario, "seed": self.seed, "speed": self.clock.speed, **config,
-        })
+        self._run_config = config
+        if announce:
+            self._emit(EventType.RUN_STARTED, self.clock.start, {
+                "scenario": self.scenario, "seed": self.seed, "speed": self.clock.speed,
+                **config,
+            })
         return self.run_id
 
     def start(self) -> None:
@@ -136,6 +142,60 @@ class FeedEngine:
             with session_scope() as s:
                 s.get(SimRun, self.run_id).status = "stopped"
             self._emit(EventType.RUN_STOPPED, self.clock.now(), {})
+
+    def warm_up(self, hours: float, *, cache_only: bool = True) -> dict:
+        """Fast-forward ``hours`` of simulated time before the live run starts,
+        so the demo opens on a loaded, steady-state ED instead of an empty one.
+
+        Runs headless and as fast as possible: the AI triager blocks on each
+        decision (replays are instant), and with ``cache_only`` a cache miss
+        falls back to the rules triager instead of calling the API. Events
+        are not published. Afterwards the clock restarts at the warm-up end
+        and all KPI counters are reset, so metrics cover the live run only.
+        Patients still in the ED carry over.
+        """
+        if self.run_id is None:
+            self.create_run(announce=False)  # announced once warm-up is done
+        triager = self.arms[Arm.AI].triager
+        ai_stats = getattr(triager, "stats", None)
+        saved = (getattr(triager, "blocking", None), getattr(triager, "cache_only", None))
+        if ai_stats is not None:
+            triager.blocking, triager.cache_only = True, cache_only
+        multiplier, self.arrival_multiplier = self.arrival_multiplier, 1.0  # surge starts live
+        self._muted = True
+        started = time.monotonic()
+        try:
+            self.step(self.clock.start + timedelta(hours=hours))
+        finally:
+            self._muted = False
+            self.arrival_multiplier = multiplier
+            if ai_stats is not None:
+                triager.blocking, triager.cache_only = saved
+        end = self._last_tick
+        summary = {
+            "hours": hours,
+            "from": self.clock.start.isoformat(),
+            "until": end.isoformat(),
+            "seconds": round(time.monotonic() - started, 1),
+            "in_ed": {arm.value: len(a.encounters) for arm, a in self.arms.items()},
+        }
+        if ai_stats is not None:
+            summary["ai"] = {"claude_calls": ai_stats["calls"],
+                             "replayed": ai_stats["cache_hits"],
+                             "rules_fallbacks": ai_stats["fallbacks"]}
+            triager.reset_stats()
+        for arm in self.arms.values():
+            arm.reset_counters()
+        self.clock = SimClock(end, self.clock.speed)
+        self.warmup = summary
+        with session_scope() as s:
+            run = s.get(SimRun, self.run_id)
+            run.config = {**run.config, "warmup": summary}
+        self._emit(EventType.RUN_STARTED, end, {
+            "scenario": self.scenario, "seed": self.seed, "speed": self.clock.speed,
+            **self._run_config, "warmup": summary,
+        })
+        return summary
 
     async def _loop(self) -> None:
         while not self._stopping:
@@ -279,5 +339,7 @@ class FeedEngine:
 
     def _emit(self, event_type: EventType, sim_time: datetime, data: dict,
               arm: Arm | None = None) -> None:
+        if self._muted:
+            return
         self.bus.emit(event_type, data, sim_time=sim_time, run_id=self.run_id,
                       arm=arm.value if arm else None)

@@ -30,9 +30,14 @@
 <!-- Controls: one row, above everything they scope -->
 <section class="controls">
   <label>Seed <input type="number" x-model.number="form.seed" min="0" class="w-num"></label>
-  <label>Day starts
+  <label>Opens at
     <select x-model="form.startHour">
-      <template x-for="h in [0, 6, 8, 10, 14, 18]"><option :value="h" x-text="String(h).padStart(2,'0') + ':00'"></option></template>
+      <option value="0">00:00</option>
+      <option value="6">06:00</option>
+      <option value="8">08:00</option>
+      <option value="10">10:00</option>
+      <option value="14">14:00</option>
+      <option value="18">18:00</option>
     </select>
   </label>
   <label>Arrivals
@@ -49,7 +54,10 @@
       <option value="rules">Rules only (no LLM)</option>
     </select>
   </label>
-  <button class="btn-primary" @click="startRun()" :disabled="busy">Start new run</button>
+  <label title="Simulate the 30 hours before opening so the ED starts loaded, as it would be in real life">
+    <input type="checkbox" x-model="form.warm"> Warm start</label>
+  <button class="btn-primary" @click="startRun()" :disabled="busy"
+          x-text="busy ? (form.warm ? 'Warming up…' : 'Starting…') : 'Start new run'"></button>
   <span class="divider"></span>
   <button class="btn" @click="post(snap.run?.paused ? '/api/resume' : '/api/pause')" :disabled="!snap.run"
           x-text="snap.run?.paused ? 'Resume' : 'Pause'"></button>
@@ -65,6 +73,7 @@
   <div class="legend" aria-label="Legend">
     <span class="key"><span class="swatch" style="background: var(--series-1)"></span>AI-assisted ED</span>
     <span class="key"><span class="swatch" style="background: var(--series-2)"></span>Manual triage ED</span>
+    <span class="warm-note" x-show="snap.run?.warmup" x-text="warmupText()"></span>
   </div>
 
   <!-- KPI comparison tiles -->

@@ -33,7 +33,8 @@ class RunParams:
     surge: float = 1.0
     volume: float = 150.0
     ai_mode: str = "replay"  # claude | replay | rules
-    start: str = "2026-11-06T10:00:00-07:00"
+    start: str = "2026-11-06T10:00:00-07:00"  # when the live run opens
+    warmup_hours: float = 30.0  # simulated before ``start``; 0 = empty ED
 
 
 class SimulationManager:
@@ -48,6 +49,7 @@ class SimulationManager:
         self._next_point: datetime | None = None
         self._sampler: asyncio.Task[None] | None = None
         self._lock = asyncio.Lock()
+        self.warming_up = False
 
     # -- controls -----------------------------------------------------------
 
@@ -60,9 +62,10 @@ class SimulationManager:
                 offline=params.ai_mode == "replay",
                 blocking=False,
             )
-            self.engine = FeedEngine(
+            opens_at = datetime.fromisoformat(params.start)
+            engine = FeedEngine(
                 self.bus,
-                sim_start=datetime.fromisoformat(params.start),
+                sim_start=opens_at - timedelta(hours=params.warmup_hours),
                 speed=params.speed,
                 seed=params.seed,
                 daily_volume=params.volume,
@@ -70,12 +73,23 @@ class SimulationManager:
                 ai_triager=triager,
                 scenario=f"ui:{params.ai_mode}",
             )
+            self.engine = None
             self.params = params
             self.series = []
             self.feed.recent.clear()
-            self._next_point = self.engine.clock.start
-            run_id = await asyncio.to_thread(self.engine.create_run)
-            self.engine.start()
+            # Snapshots report "warming up" until the engine is handed over.
+            self.warming_up = params.warmup_hours > 0
+            try:
+                if self.warming_up:
+                    await asyncio.to_thread(engine.warm_up, params.warmup_hours)
+                else:
+                    await asyncio.to_thread(engine.create_run)
+            finally:
+                self.warming_up = False
+            self.engine = engine
+            run_id = engine.run_id
+            self._next_point = engine.clock.start
+            engine.start()
             self._sampler = asyncio.create_task(self._sample_loop(), name="series-sampler")
             return run_id
 
@@ -140,6 +154,7 @@ class SimulationManager:
             "params": asdict(self.params) if self.params else asdict(RunParams()),
             "events": list(self.feed.recent)[-60:],
             "telemetry": self._telemetry(),
+            "warming_up": self.warming_up,
         }
         if engine is None:
             return {**base, "run": None, "arms": {}, "series": []}
@@ -156,6 +171,7 @@ class SimulationManager:
                 "paused": engine.clock.paused,
                 "speed": engine.clock.speed,
                 "running": engine._task is not None and not engine._task.done(),
+                "warmup": engine.warmup,
             },
             "arms": arms,
             "series": self.series,

@@ -94,3 +94,16 @@ def test_live_mode_provisional_then_late_decision():
     [(mrn, decision)] = t.completed()
     assert mrn == p.mrn and decision.ctas == 2 and decision.source == AssessmentSource.AI
     t.close()
+
+
+def test_cache_only_never_calls_api(monkeypatch):
+    """During warm-up a cache miss falls back to rules even with an API key."""
+    t = ClaudeTriager("not-a-real-key", blocking=True)
+    t.cache_only = True
+    monkeypatch.setattr(t, "_from_cache", lambda key, model: None)
+    monkeypatch.setattr(t, "_from_api", lambda *a: (_ for _ in ()).throw(AssertionError("API")))
+    d = t.assess(_patient(), _normal_vitals(), 3, 0)
+    assert d.source == AssessmentSource.RULES and t.stats["fallbacks"] == 1
+    t.reset_stats()
+    assert t.stats["fallbacks"] == 0
+    t.close()

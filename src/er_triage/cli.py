@@ -31,6 +31,9 @@ def main() -> None:
     sim.add_argument("--ai", choices=["claude", "rules"], help="AI arm triager")
     sim.add_argument("--offline", action="store_true",
                      help="replay cached Claude responses only (rules on cache miss)")
+    sim.add_argument("--warmup", type=float, default=0, metavar="HOURS",
+                     help="simulate HOURS before --start first (steady-state ED); "
+                          "with --ai claude this also records the warm-up for replay")
     sim.add_argument("--live", action="store_true",
                      help="don't wait for Claude; triage provisionally and apply late")
 
@@ -71,14 +74,20 @@ async def _simulate(args: argparse.Namespace) -> None:
                                   blocking=not args.live)
     engine = FeedEngine(
         bus,
-        sim_start=datetime.fromisoformat(args.start),
+        sim_start=datetime.fromisoformat(args.start) - timedelta(hours=args.warmup),
         speed=args.speed or settings.sim_speed,
         seed=args.seed,
         daily_volume=args.volume,
         arrival_multiplier=args.surge,
         ai_triager=ai_triager,
     )
-    run_id = engine.create_run()
+    if args.warmup:
+        w = engine.warm_up(args.warmup, cache_only=args.offline)
+        print(f"warm-up: {w['hours']:g} h in {w['seconds']}s, in ED {w['in_ed']}"
+              + (f", AI {w['ai']}" if "ai" in w else ""))
+        run_id = engine.run_id
+    else:
+        run_id = engine.create_run()
     print(f"run {run_id}: {args.minutes:g} sim minutes at {engine.clock.speed:g}x "
           f"(~{args.minutes / engine.clock.speed:.0f}s real)")
     end = engine.clock.start + timedelta(minutes=args.minutes)

@@ -27,7 +27,7 @@ function cssVar(name) {
 function app() {
   return {
     snap: { run: null, arms: {}, series: [], events: [], telemetry: { sinks: {}, event_counts: {} } },
-    form: { seed: 3, startHour: 10, surge: 1, ai_mode: "replay", volume: 150 },
+    form: { seed: 3, startHour: "10", surge: 1, ai_mode: "replay", volume: 150, warm: true },
     speeds: [0.5, 1, 2, 5, 10, 20, 30, 45, 60],
     speedIdx: 2,
     kpis: KPIS,
@@ -86,6 +86,7 @@ function app() {
           volume: this.form.volume,
           ai_mode: this.form.ai_mode,
           start: `2026-11-06T${hh}:00:00-07:00`,
+          warmup_hours: this.form.warm ? 30 : 0,
         });
         this.speedTouched = false;
       } finally {
@@ -99,7 +100,9 @@ function app() {
       this.form.seed = p.seed;
       this.form.surge = p.surge;
       this.form.ai_mode = p.ai_mode;
-      this.form.startHour = Number(p.start.slice(11, 13));
+      // String, to match the <option> values the select compares against.
+      this.form.startHour = String(Number(p.start.slice(11, 13)));
+      this.form.warm = p.warmup_hours > 0;
     },
     setSpeed() {
       this.speedTouched = true;
@@ -119,6 +122,16 @@ function app() {
       if (!t) return "";
       const d = new Date(t.slice(0, 10) + "T12:00:00Z");
       return `${WEEKDAYS[d.getUTCDay()]} ${t.slice(11, 16)}`;
+    },
+    warmupText() {
+      const w = this.snap.run?.warmup;
+      if (!w) return "";
+      const n = Math.round((w.in_ed.ai + w.in_ed.baseline) / 2);
+      let text = `Warm start: ${w.hours} h simulated before opening · ${n} patients already in each ED · KPIs count from opening`;
+      if (w.ai?.rules_fallbacks && this.snap.params.ai_mode !== "rules") {
+        text += ` · ${w.ai.rules_fallbacks} warm-up triages used rules (not recorded)`;
+      }
+      return text;
     },
     metric(arm, key) {
       return this.snap.arms[arm]?.metrics?.[key] ?? 0;

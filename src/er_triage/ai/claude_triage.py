@@ -144,6 +144,9 @@ class ClaudeTriager:
         self.escalation_model = escalation_model
         self.blocking = blocking
         self.offline = offline
+        # Temporarily replay-only (used during warm-up): cache misses fall back
+        # to rules instead of calling the API.
+        self.cache_only = False
         self.timeout_s = timeout_s
         self.rules = RulesTriager()
         self._emit = emit
@@ -195,6 +198,11 @@ class ClaudeTriager:
         # Continuous reassessment stays on the instant vital-sign rules.
         return self.rules.reassess(patient, vitals, assigned, true_ctas)
 
+    def reset_stats(self) -> None:
+        for k in self.stats:
+            self.stats[k] = 0
+        self.tokens_by_model.clear()
+
     def close(self) -> None:
         self._pool.shutdown(wait=False, cancel_futures=True)
 
@@ -210,7 +218,8 @@ class ClaudeTriager:
                 call = self._call(self.escalation_model, prompt, patient)
         except Exception as exc:
             self.stats["fallbacks"] += 1
-            log.warning("Claude triage failed for %s, using rules: %s", patient.mrn, exc)
+            (log.debug if self.cache_only else log.warning)(
+                "Claude triage failed for %s, using rules: %s", patient.mrn, exc)
             rules.rationale = f"AI unavailable ({type(exc).__name__}); " + rules.rationale
             return rules
 
@@ -249,7 +258,7 @@ class ClaudeTriager:
         ).hexdigest()
         call = self._from_cache(key, model)
         if call is None:
-            if self.client is None:
+            if self.client is None or self.cache_only:
                 raise RuntimeError("offline and no cached response")
             call = self._from_api(key, model, effort, prompt)
         with self._lock:

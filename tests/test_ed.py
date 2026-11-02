@@ -144,3 +144,38 @@ def test_stream_independent_of_step_timing(db):
         assert rows_a and rows_a == rows_b
     finally:
         _cleanup(a, b)
+
+
+class _Recorder:
+    def __init__(self) -> None:
+        self.events: list[tuple[str, datetime]] = []
+
+    def emit(self, event_type, data, *, sim_time, run_id, arm) -> None:
+        self.events.append((str(event_type), sim_time))
+
+
+def test_warm_up_opens_loaded_and_counts_from_opening(db):
+    """Warm-up carries patients over but not KPIs, publishes nothing, and
+    leaves the ED in exactly the state a plain run reaches."""
+    bus = _Recorder()
+    warm = FeedEngine(bus, sim_start=START, seed=5, arrival_multiplier=1.5)
+    summary = warm.warm_up(30)
+    plain = FeedEngine(EventBus([]), sim_start=START, seed=5)  # warm-up ignores surge
+    plain.create_run()
+    plain.step(START + timedelta(hours=30))
+    try:
+        opens = START + timedelta(hours=30)
+        assert warm.clock.start == opens and warm.processed_until == opens
+        assert warm.arrival_multiplier == 1.5
+        assert bus.events == [("run.started", opens)]
+        for arm in Arm:
+            ed = warm.arms[arm]
+            assert ed.encounters and summary["in_ed"][arm.value] == len(ed.encounters)
+            assert ed.counters.seen == 0 and not ed.counters.waits
+            assert plain.arms[arm].counters.seen > 0
+            assert ({e.patient.mrn: e.status for e in ed.encounters.values()}
+                    == {e.patient.mrn: e.status for e in plain.arms[arm].encounters.values()})
+        with session_scope() as s:
+            assert s.get(SimRun, warm.run_id).config["warmup"]["hours"] == 30
+    finally:
+        _cleanup(warm, plain)

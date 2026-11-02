@@ -226,6 +226,10 @@ class EDArm:
         }
         self.counters = ArmCounters()
 
+    def reset_counters(self) -> None:
+        """Start KPI counting afresh (after a warm-up); patients stay put."""
+        self.counters = ArmCounters()
+
     # -- views -------------------------------------------------------------
 
     def by_status(self, *statuses: EncounterStatus) -> list[ActiveEncounter]:
