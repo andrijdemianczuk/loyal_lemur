@@ -133,6 +133,15 @@ function app() {
       }
       return text;
     },
+    diffWord(key) {
+      const d = this.metric("baseline", key) - this.metric("ai", key);
+      return { n: Math.abs(d), word: d >= 0 ? "fewer" : "more" };
+    },
+    bedRequestText() {
+      const a = this.snap.arms.ai?.admission;
+      if (!a) return "–";
+      return `${a.true_pos + a.false_pos} made · ${a.true_pos} needed · ${a.false_neg} admissions missed`;
+    },
     metric(arm, key) {
       return this.snap.arms[arm]?.metrics?.[key] ?? 0;
     },

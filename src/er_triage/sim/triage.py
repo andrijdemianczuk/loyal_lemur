@@ -66,6 +66,7 @@ class TriageDecision:
     red_flags: list[str] = field(default_factory=list)
     priority_score: float | None = None
     fast_track: bool | None = None  # None = let the queue policy decide
+    admit_predicted: bool | None = None  # None = no admission prediction made
     model: str | None = None
     latency_ms: int | None = None
     input_tokens: int | None = None

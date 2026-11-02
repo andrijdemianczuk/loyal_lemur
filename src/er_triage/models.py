@@ -206,6 +206,8 @@ class TriageAssessment(Base):
     red_flags: Mapped[list[Any]] = mapped_column(default=list)
     # False when a decision arrived too late to change care (kept for audit).
     applied: Mapped[bool] = mapped_column(default=True)
+    # Likely to need hospital admission (AI only); drives the early bed request.
+    admit_predicted: Mapped[bool | None]
 
     # LLM call telemetry (null for nurse assessments).
     model: Mapped[str | None] = mapped_column(String(64))

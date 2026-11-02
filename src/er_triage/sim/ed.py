@@ -75,6 +75,10 @@ class EDConfig:
     results_area_capacity: int = 8
     deteriorated_treatment_factor: float = 1.5
     slo_guard_min: float = 180  # AI policy: escalate walk-ins waiting this long
+    # Early bed request: when triage predicts admission, the inpatient bed
+    # request starts at triage instead of after the physician's decision,
+    # shortening boarding for correctly predicted admissions. 0 = off.
+    early_bed_request_min: float = 0
 
 
 @dataclass
@@ -94,6 +98,7 @@ class ActiveEncounter:
     priority_score: float | None = None
     lane: Lane | None = None
     fast_track_hint: bool | None = None
+    admit_predicted: bool | None = None
     triage_done_at: datetime | None = None
     seen_at: datetime | None = None
     resource_free_at: datetime | None = None  # bed/chair released
@@ -197,6 +202,11 @@ class ArmCounters:
     lwbs: int = 0
     ai_late_applied: int = 0
     ai_late_dropped: int = 0  # arrived after the patient was already seen or gone
+    # Admission prediction at triage, scored when the patient is seen.
+    admit_true_pos: int = 0
+    admit_false_pos: int = 0
+    admit_false_neg: int = 0
+    boarding_saved_min: float = 0.0
     waits: list[WaitRecord] = field(default_factory=list)
 
 
@@ -285,6 +295,8 @@ class EDArm:
         enc.priority_score = decision.priority_score
         if decision.fast_track is not None:
             enc.fast_track_hint = decision.fast_track
+        if decision.admit_predicted is not None:
+            enc.admit_predicted = decision.admit_predicted
         if first:
             enc.initial_assigned_ctas = decision.ctas
             if decision.ctas > enc.current_ctas:
@@ -314,6 +326,7 @@ class EDArm:
             rationale=decision.rationale, red_flags=decision.red_flags, model=decision.model,
             latency_ms=decision.latency_ms, input_tokens=decision.input_tokens,
             output_tokens=decision.output_tokens, applied=applied,
+            admit_predicted=decision.admit_predicted,
         ))
         self._emit(EventType.TRIAGE_ASSESSED, t, {
             "encounter_id": str(enc.encounter_id),
@@ -326,6 +339,7 @@ class EDArm:
             "lane": enc.lane,
             "rationale": decision.rationale,
             "red_flags": decision.red_flags,
+            "likely_admission": decision.admit_predicted,
             "model": decision.model,
         }, arm=self.arm)
 
@@ -472,6 +486,15 @@ class EDArm:
         if enc.deteriorated:
             treatment *= self.config.deteriorated_treatment_factor
         boarding = p.boarding_min if p.admitted else (90.0 if enc.admitted else 0.0)
+        if enc.admit_predicted is not None:
+            c = self.counters
+            c.admit_true_pos += enc.admit_predicted and p.admitted
+            c.admit_false_pos += enc.admit_predicted and not p.admitted
+            c.admit_false_neg += not enc.admit_predicted and p.admitted
+            if enc.admit_predicted and p.admitted and self.config.early_bed_request_min:
+                saved = min(self.config.early_bed_request_min, boarding)
+                boarding -= saved
+                c.boarding_saved_min += saved
         enc.depart_at = t + timedelta(minutes=treatment + boarding)
         if lane in (Lane.FAST_TRACK, Lane.INTAKE):
             chair = min(treatment, self.config.fast_track_chair_max_min)

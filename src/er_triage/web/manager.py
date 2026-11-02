@@ -211,6 +211,10 @@ class SimulationManager:
             "waiting": [self._patient_row(e, t) for e in waiting],
             "late": {"applied": ed.counters.ai_late_applied,
                      "dropped": ed.counters.ai_late_dropped},
+            "admission": {"true_pos": ed.counters.admit_true_pos,
+                          "false_pos": ed.counters.admit_false_pos,
+                          "false_neg": ed.counters.admit_false_neg,
+                          "boarding_saved_min": round(ed.counters.boarding_saved_min)},
         }
 
     @staticmethod

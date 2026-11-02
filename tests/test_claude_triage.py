@@ -107,3 +107,9 @@ def test_cache_only_never_calls_api(monkeypatch):
     t.reset_stats()
     assert t.stats["fallbacks"] == 0
     t.close()
+
+
+def test_admission_prediction_passed_through():
+    reply = _reply(3).model_copy(update={"likely_admission": True})
+    t = FakeTriager({"claude-haiku-5-5": reply}, blocking=True)
+    assert t.assess(_patient(), _normal_vitals(), 3, 0).admit_predicted is True

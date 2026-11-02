@@ -80,14 +80,23 @@ def evaluate(api_key: str | None, per_code: int = 4, offline: bool = False) -> N
                 t.prefetch(p, p.vitals)
 
     scores = {name: Score() for name in triagers}
+    # Admission prediction (Claude only): name -> [tp, fp, fn, tn]
+    admit: dict[str, list[int]] = defaultdict(lambda: [0, 0, 0, 0])
     misses: dict[str, list[str]] = defaultdict(list)
     for p in patients:
         true = p.presentation.ctas
         for name, t in triagers.items():
             d = t.assess(p, p.vitals, true, 10)
             scores[name].add(true, d.ctas, p.presentation.subtle)
+            cell = {(True, True): 0, (True, False): 1, (False, True): 2, (False, False): 3}
+            if d.admit_predicted is not None:
+                admit[name][cell[(d.admit_predicted, p.admitted)]] += 1
             if true <= 2 and d.ctas >= 3 and isinstance(t, ClaudeTriager):
                 misses[name].append(f"{p.presentation.code} -> CTAS {d.ctas}")
+        # Ceiling: knows each presentation's true admission rate (no model can
+        # do better, because the simulated disposition is random given it).
+        best = p.presentation.admit_prob >= 0.5
+        admit["Best possible"][cell[(best, p.admitted)]] += 1
 
     print(f"\n{len(patients)} patients ({per_code} per presentation, "
           f"{sum(p.presentation.subtle for p in patients)} subtle)\n")
@@ -95,6 +104,16 @@ def evaluate(api_key: str | None, per_code: int = 4, offline: bool = False) -> N
     print(f"  {'':18}" + "".join(f"{c:>16}" for c in cols))
     for name, sc in scores.items():
         print(f"  {name:18}" + "".join(f"{v:>16}" for v in sc.row().values()))
+
+    if admit:
+        print("\n  Admission prediction (vs simulated disposition):")
+        admit["Best possible"] = admit.pop("Best possible")  # print last
+        for name, (tp, fp, fn, tn) in admit.items():
+            n = tp + fp + fn + tn
+            print(f"  {name:18} accuracy {100 * (tp + tn) / n:.0f}%  "
+                  f"precision {100 * tp / max(1, tp + fp):.0f}%  "
+                  f"recall {100 * tp / max(1, tp + fn):.0f}%  "
+                  f"(admitted {tp + fn}/{n}, predicted {tp + fp})")
 
     print()
     for name, t in triagers.items():

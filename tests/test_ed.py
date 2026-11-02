@@ -179,3 +179,24 @@ def test_warm_up_opens_loaded_and_counts_from_opening(db):
             assert s.get(SimRun, warm.run_id).config["warmup"]["hours"] == 30
     finally:
         _cleanup(warm, plain)
+
+
+class _AlwaysAdmit(RulesTriager):
+    def assess(self, patient, vitals, true_ctas, waiting_load):
+        d = super().assess(patient, vitals, true_ctas, waiting_load)
+        d.admit_predicted = True
+        return d
+
+
+def test_early_bed_request_shortens_boarding_for_true_admissions(db):
+    engine = FeedEngine(EventBus([]), sim_start=START, seed=8, ai_triager=_AlwaysAdmit())
+    engine.create_run()
+    engine.step(START + timedelta(hours=24))
+    try:
+        ai, base = engine.arms[Arm.AI].counters, engine.arms[Arm.BASELINE].counters
+        assert ai.admit_true_pos > 0 and ai.admit_false_pos > 0 and ai.admit_false_neg == 0
+        # Only correctly predicted admissions save time, at most 60 min each.
+        assert 0 < ai.boarding_saved_min <= 60 * ai.admit_true_pos
+        assert base.boarding_saved_min == 0 and base.admit_true_pos == 0  # nurse: no prediction
+    finally:
+        _cleanup(engine)

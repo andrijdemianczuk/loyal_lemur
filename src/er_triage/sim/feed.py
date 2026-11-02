@@ -67,9 +67,10 @@ class FeedEngine:
         self.arrival_multiplier = arrival_multiplier
         self.tick_seconds = tick_seconds
         self.ed_config = ed_config or EDConfig()
-        # Same resources; the AI arm only changes how the intake zone is used.
+        # Same resources; the AI arm changes how the intake zone is used and
+        # requests inpatient beds at triage for predicted admissions.
         self.ai_ed_config = ai_ed_config or dataclasses.replace(
-            self.ed_config, intake_mode="dynamic")
+            self.ed_config, intake_mode="dynamic", early_bed_request_min=60)
         self.run_id: uuid.UUID | None = None
         nurse_rng = random.Random(None if seed is None else seed + 2)
         self.arms = {

@@ -164,7 +164,8 @@ def encounter_detail(encounter_id: uuid.UUID) -> dict:
             "assessments": [
                 {"at": a.assessed_at, "source": a.source, "ctas": a.ctas_level,
                  "rationale": a.rationale, "red_flags": a.red_flags, "model": a.model,
-                 "latency_ms": a.latency_ms, "applied": a.applied}
+                 "latency_ms": a.latency_ms, "applied": a.applied,
+                 "admit_predicted": a.admit_predicted}
                 for a in assessments
             ],
         }

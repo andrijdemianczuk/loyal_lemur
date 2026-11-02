@@ -37,7 +37,7 @@ from er_triage.sim.triage import RulesTriager, TriageDecision
 
 log = logging.getLogger(__name__)
 
-PROMPT_VERSION = "ctas-v1"
+PROMPT_VERSION = "ctas-v2"  # v2: adds likely_admission
 
 SYSTEM_PROMPT = """\
 You are an emergency department triage decision-support system used by \
@@ -77,6 +77,10 @@ over-triage, but do not over-triage clearly minor problems: every \
 unnecessary high-acuity assignment delays someone else.
 - fast_track_eligible: true only for stable, ambulatory patients likely to \
 be treated and discharged quickly (most CTAS 4-5 and some low-risk CTAS 3).
+- likely_admission: true when this patient will probably need admission to \
+hospital (not just ED treatment and discharge), judged from the complaint, \
+age, history and vital signs. It is used to request an inpatient bed early, \
+so be realistic: neither every older patient nor only the critically ill.
 - confidence: "high" when the level is clear; "medium" or "low" when the \
 case is ambiguous or could plausibly be a different level.
 - red_flags: short phrases for findings that drove the level up (empty if \
@@ -93,6 +97,7 @@ class ClaudeTriage(BaseModel):
     red_flags: list[str] = Field(default_factory=list)
     immediate_actions: list[str] = Field(default_factory=list)
     fast_track_eligible: bool
+    likely_admission: bool = False
 
 
 def patient_prompt(patient: NewPatient, vitals: Vitals) -> str:
@@ -239,6 +244,7 @@ class ClaudeTriager:
             rationale=rationale,
             red_flags=flags,
             fast_track=out.fast_track_eligible and level >= 3,
+            admit_predicted=out.likely_admission,
             model=call.model,
             latency_ms=call.latency_ms,
             input_tokens=call.input_tokens,

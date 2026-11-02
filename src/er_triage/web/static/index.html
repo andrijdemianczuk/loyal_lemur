@@ -184,12 +184,15 @@
     <div class="card story">
       <h2>Why it matters</h2>
       <ul class="story-list">
-        <li><b x-text="(metric('baseline','slo_breaches') - metric('ai','slo_breaches'))"></b> fewer walk-ins waited past 4 hours
+        <li><b x-text="diffWord('slo_breaches').n"></b> <span x-text="diffWord('slo_breaches').word"></span> walk-ins waited past 4 hours
           <span class="muted" x-text="'(' + metric('ai','slo_breaches') + ' vs ' + metric('baseline','slo_breaches') + ')'"></span></li>
-        <li><b x-text="metric('baseline','under_triaged') - metric('ai','under_triaged')"></b> fewer patients under-triaged at intake
+        <li><b x-text="diffWord('under_triaged').n"></b> <span x-text="diffWord('under_triaged').word"></span> patients under-triaged at intake
           <span class="muted">— the patients most at risk of waiting too long</span></li>
-        <li><b x-text="metric('baseline','deteriorations') - metric('ai','deteriorations')"></b> fewer patients deteriorated in the waiting room</li>
-        <li><b x-text="metric('baseline','lwbs') - metric('ai','lwbs')"></b> fewer patients left without being seen</li>
+        <li><b x-text="diffWord('deteriorations').n"></b> <span x-text="diffWord('deteriorations').word"></span> patients deteriorated in the waiting room
+          <span class="muted" x-text="'(' + metric('ai','deteriorations') + ' vs ' + metric('baseline','deteriorations') + ')'"></span></li>
+        <li><b x-text="diffWord('lwbs').n"></b> <span x-text="diffWord('lwbs').word"></span> patients left without being seen</li>
+        <li x-show="snap.arms.ai?.admission?.boarding_saved_min"><b x-text="dur(snap.arms.ai?.admission?.boarding_saved_min || 0)"></b> of bed time freed by requesting inpatient beds at triage
+          <span class="muted">— predicted admissions, so the next patient gets a bed sooner</span></li>
         <li class="muted">Same staff, beds and patients in both EDs. Only the decisions differ: who is seen first, where they go, and when to open capacity.</li>
       </ul>
       <template x-if="snap.profile === 'pipeline-pitch'">
@@ -219,6 +222,8 @@
           <span>Provisional, AI late</span><b x-text="snap.telemetry.llm.late"></b>
           <span>Tokens in / out</span><b x-text="snap.telemetry.llm.input_tokens.toLocaleString() + ' / ' + snap.telemetry.llm.output_tokens.toLocaleString()"></b>
           <span>Cost at list price</span><b x-text="'$' + snap.telemetry.llm.est_cost_usd.toFixed(3)"></b>
+          <span>Early bed requests</span><b x-text="bedRequestText()"></b>
+          <span>Boarding time saved</span><b x-text="dur(snap.arms.ai?.admission?.boarding_saved_min || 0)"></b>
         </div>
       </template>
       <p class="muted" x-show="!snap.telemetry.llm">Rules-only mode: deterministic CTAS calculator, no LLM.</p>
@@ -273,6 +278,7 @@
             <b x-text="sourceName(a)"></b>
             <span class="muted" x-text="a.at.slice(11,16) + (a.latency_ms ? ' · ' + (a.latency_ms/1000).toFixed(1) + ' s' : '')"></span>
             <span class="flag" x-show="!a.applied">recorded only (patient already seen)</span>
+            <span class="chip" x-show="a.admit_predicted">Likely admission · bed requested at triage</span>
           </div>
           <p x-text="a.rationale"></p>
           <div class="chips" x-show="a.red_flags.length"><template x-for="f in a.red_flags"><span class="chip" x-text="f"></span></template></div>
