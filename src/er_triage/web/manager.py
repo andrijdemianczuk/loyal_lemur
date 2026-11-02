@@ -2,6 +2,7 @@
 a time series of metrics for charts, and JSON state snapshots."""
 
 import asyncio
+import statistics
 import uuid
 from dataclasses import asdict, dataclass
 from datetime import datetime, timedelta
@@ -13,7 +14,7 @@ from er_triage.events import EventBus, EventType
 from er_triage.events.sinks import MemorySink
 from er_triage.models import Arm, EncounterStatus, Lane
 from er_triage.sim.catalog import WALK_IN_SLO_MIN, effective_target_min
-from er_triage.sim.ed import WAITING, ActiveEncounter, EDArm
+from er_triage.sim.ed import WAITING, ActiveEncounter, EDArm, percentile
 from er_triage.sim.feed import FeedEngine
 
 SERIES_EVERY = timedelta(minutes=5)
@@ -33,7 +34,7 @@ class RunParams:
     surge: float = 1.0
     volume: float = 150.0
     ai_mode: str = "replay"  # claude | replay | rules
-    start: str = "2026-11-06T10:00:00-07:00"  # when the live run opens
+    start: str = "2026-11-06T14:00:00-07:00"  # when the live run opens
     warmup_hours: float = 30.0  # simulated before ``start``; 0 = empty ED
 
 
@@ -180,6 +181,11 @@ class SimulationManager:
     def _arm_state(self, ed: EDArm, t: datetime) -> dict[str, Any]:
         m = ed.metrics(t)
         m.pop("by_ctas_detail", None)
+        # Since opening (counters reset after warm-up): steadier than the
+        # last-hour window and the basis for the headline numbers.
+        waits = [r.wait_min for r in ed.counters.waits]
+        m["avg_wait_open_min"] = round(statistics.fmean(waits), 1) if waits else 0.0
+        m["p90_wait_open_min"] = round(percentile(waits, 90), 1)
         waiting = sorted(
             ed.by_status(*WAITING),
             key=lambda e: (e.status != EncounterStatus.WAITING_PHYSICIAN,

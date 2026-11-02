@@ -71,7 +71,7 @@ class StartRequest(BaseModel):
     surge: float = Field(1.0, gt=0, le=3)
     volume: float = Field(150, gt=0, le=600)
     ai_mode: str = Field("replay", pattern="^(claude|replay|rules)$")
-    start: str = "2026-11-06T10:00:00-07:00"
+    start: str = "2026-11-06T14:00:00-07:00"
     warmup_hours: float = Field(30, ge=0, le=72)
 
 

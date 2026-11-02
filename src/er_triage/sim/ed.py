@@ -542,7 +542,7 @@ class EDArm:
                 "waiting": sum(1 for e in waiting if e.presentation.ctas == level),
                 "seen": sum(1 for r in done if not r.left),
                 "avg_wait_min": round(statistics.fmean(waits), 1) if waits else 0.0,
-                "p90_wait_min": round(_percentile(waits, 90), 1),
+                "p90_wait_min": round(percentile(waits, 90), 1),
                 "target_misses": sum(
                     1 for r in done if r.wait_min > effective_target_min(r.current_ctas)),
             }
@@ -550,7 +550,7 @@ class EDArm:
             "waiting": len(waiting),
             "in_treatment": len(self.by_status(EncounterStatus.IN_TREATMENT)),
             "avg_wait_min": round(statistics.fmean(recent), 1) if recent else 0.0,
-            "p90_wait_min": round(_percentile(recent, 90), 1),
+            "p90_wait_min": round(percentile(recent, 90), 1),
             "max_walk_in_wait_min": round(max(walk_in_waits, default=0.0), 1),
             "slo_breaches": c.slo_breaches,
             "ctas_target_misses": c.target_misses,
@@ -563,7 +563,7 @@ class EDArm:
         return metrics
 
 
-def _percentile(values: list[float], pct: float) -> float:
+def percentile(values: list[float], pct: float) -> float:
     if not values:
         return 0.0
     ordered = sorted(values)

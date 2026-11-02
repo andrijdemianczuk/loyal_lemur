@@ -8,8 +8,8 @@ const ARMS = [
 
 const KPIS = [
   { key: "waiting", label: "Waiting now", unit: "n" },
-  { key: "avg_wait_min", label: "Avg wait to physician, last hour", unit: "min" },
-  { key: "p90_wait_min", label: "P90 wait, last hour", unit: "min" },
+  { key: "avg_wait_open_min", label: "Avg wait to physician, since opening", unit: "min" },
+  { key: "p90_wait_open_min", label: "P90 wait, since opening", unit: "min" },
   { key: "slo_breaches", label: "Walk-ins past 4 h SLO", unit: "n" },
   { key: "under_triaged", label: "Under-triaged at intake", unit: "n" },
   { key: "lwbs", label: "Left without being seen", unit: "n" },
@@ -27,7 +27,7 @@ function cssVar(name) {
 function app() {
   return {
     snap: { run: null, arms: {}, series: [], events: [], telemetry: { sinks: {}, event_counts: {} } },
-    form: { seed: 3, startHour: "10", surge: 1, ai_mode: "replay", volume: 150, warm: true },
+    form: { seed: 3, startHour: "14", surge: 1, ai_mode: "replay", volume: 150, warm: true },
     speeds: [0.5, 1, 2, 5, 10, 20, 30, 45, 60],
     speedIdx: 2,
     kpis: KPIS,
