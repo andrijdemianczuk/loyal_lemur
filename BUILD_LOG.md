@@ -29,7 +29,8 @@ them against the SLI/SLO:
 | 3 | Two-arm ED flow model and calibration | Done |
 | 4 | Claude triage for the AI arm | Done |
 | 5 | Live web dashboard; steady-state recalibration | Done |
-| 6 | Demo polish: warm start, scenarios, scripts, push | Next |
+| 6 | Demo polish: warm start, scenarios, scripts, push | In progress |
+| 6a | Deterioration investigation; early bed requests | Done |
 | 7 | Event-pipeline integration (optional) | Not started |
 
 ---
@@ -133,8 +134,179 @@ them against the SLI/SLO:
 
 **End of day state:**
 - 23 tests passing.
-- Everything is committed locally. Nothing has been pushed to GitHub yet.
+- Everything is committed locally. Nothing has been pushed to GitHub yet. *(Correction, day 2: `ccab432` and everything before it had in fact been pushed.)*
 - The dashboard server is running on port 8765.
+
+---
+
+## Day 2 — 2026-11-02
+
+### Warm start (`d4f6a6e`)
+
+**Problem:** every run started from an empty ED. Day 1 showed the system only
+reaches steady state on day 2, so the opening minutes of a demo showed an
+unrealistically quiet department.
+
+**What we built:**
+- The run's start time now means *when the demo opens*. The simulation begins
+  30 simulated hours earlier and fast-forwards headlessly. That takes about
+  1.2 seconds, so the UI simply waits for it.
+- During warm-up:
+  - the AI arm replays recorded Claude decisions only; a cache miss falls back to the rules triager, with no API calls and no stalls
+  - no events are published, and downstream sees a single `run.started` event carrying a warm-up summary
+  - any surge setting is held back until opening
+- At opening, KPI counters and Claude stats reset. Patients carry over, so the
+  ED opens loaded (about 17–31 patients, roughly half of them boarding).
+- UI: a "Warm start" toggle (default on), a "Warming up…" button state, and a
+  note that says how many patients were already in each ED.
+- CLI: `simulate --warmup HOURS`. Run with `--ai claude`, it also records
+  the warm-up decisions for replay.
+- Fixed: the "Opens at" select always showed 00:00. It was a type mismatch
+  between the select's string option values and a numeric model value.
+
+### Opening time, KPI tiles, first recordings (`80ddf60`)
+
+- **Opening time 14:00.** An hour-by-hour trace showed the waiting room nearly
+  empty at 10:00, with queues building from 15:00 to 22:00. Opening at 14:00
+  means the evening crunch arrives about 2 minutes into a demo at the default speed.
+- **Wait tiles now measure "since opening".** The "last hour" average swung
+  with the SLO-aware queue, and in one evening snapshot it showed the AI ED
+  32% *slower* while it had 5 fewer SLO breaches. Since-opening values are
+  steadier and match the numbers we quote. The last-hour line chart stays.
+- **Recorded demo seeds:** seeds 3 and 7, each at normal volume and at 1.5×
+  surge, covering 30 h of warm-up plus 24 h after opening. Offline replay
+  reproduced every number exactly, with 0 cache misses.
+
+### The deterioration investigation (`9f238ae`)
+
+This is the most important story of the day, and a good one for the
+presentation: **the data contradicted our headline claim, we found out why,
+and we fixed the cause instead of the metric.**
+
+**1. The problem.** The first recordings showed the AI ED with *more*
+patients deteriorating while waiting on normal days (8 → 12 and 11 → 18).
+Yesterday's 4-seed average had shown −38%. A clinician on an interview
+panel would catch this immediately.
+
+**2. First finding: Claude's caution crowded the CTAS 2 queue.**
+- Claude assigned CTAS 2 to 27 patients whose ground truth was CTAS 3,
+  including all 14 anticoagulated head injuries. That's clinically defensible:
+  anticoagulation is a CTAS modifier.
+- The AI ED's CTAS 2 queue was twice as long (60 vs 28), so truly emergent
+  patients waited 35 min vs 9 min, against a 15-minute target.
+- The manual ED had a lucky shortcut: the nurse over-triaged 8 CTAS 2
+  patients to CTAS 1, and CTAS 1 goes straight to resus without needing a bed.
+
+**3. Hypotheses we tested and rejected.** Each was tested on the recorded seeds:
+
+| Change to the AI arm | Effect on deteriorations |
+|---|---|
+| Rank CTAS 1–2 by current vital signs | No change |
+| Rank CTAS 3 by Claude's red flags | No change (±1) |
+| Rank CTAS 3 by *true* deterioration risk (diagnostic only, uses ground truth) | No change |
+| Undo Claude's CTAS 3→2 over-triage (diagnostic only) | CTAS 2 waits halved, but CTAS 3 deteriorations rose |
+| Open the intake zone only when no CTAS 1–2 is waiting | Much worse (deteriorations about doubled) |
+| Stop streaming CTAS 3 walk-ins to fast track | No change |
+
+**Conclusion:** queue order was never the lever. Whatever the order, patients
+wait for **main beds, and about half of those beds are held by admitted
+patients boarding** while they wait for an inpatient bed.
+
+**4. Why the manual ED looked better.** A 12-seed comparison (AI arm on the
+rules triager, so no API cost) showed deteriorations essentially flat (+4%)
+while walk-outs fell 73%. The manual ED loses 5–12 patients a day to "left
+without being seen", and a patient who has walked out can no longer
+deteriorate in our count. The AI ED keeps nearly everyone, so more at-risk
+patients are still in the waiting room. "Deteriorated or left unseen"
+combined was −36% for the AI.
+
+**5. The lever that works: predict admission at triage and request the bed then.**
+This is a known operational intervention: today the bed request starts only
+after the physician decides to admit. A diagnostic that shortened boarding
+for admitted patients in the AI arm (12 seeds, rules triage, perfect
+prediction):
+
+| Boarding cut | Deteriorations, manual → AI | Avg wait, manual → AI |
+|---|---|---|
+| None | 7.9 → 8.2 (+4%) | 68 → 47 min |
+| 60 min | 7.9 → 5.5 (−31%) | 68 → 36 min |
+| 90 min | 7.9 → 4.6 (−42%) | 68 → 30 min |
+
+We chose **60 minutes**, the conservative end. It still needs checking
+against published effect sizes before we quote it as realistic.
+
+**6. Implementation.**
+- Claude's triage output gains `likely_admission`. The prompt version moves to
+  `ctas-v2`; the v1 cache is kept.
+- In the AI arm, a correctly predicted admission boards 60 minutes less. A
+  missed admission gets no benefit. False alarms cost nothing in the model,
+  but they are counted and shown.
+- `eval-triage` now scores admission prediction. Because the simulated
+  disposition is random given each presentation's admission rate, we also
+  report a "best possible" ceiling:
+
+  | Predictor | Accuracy | Precision | Recall |
+  |---|---|---|---|
+  | Haiku + Sonnet | 77% | 65% | 87% |
+  | Best possible | 81% | 73% | 81% |
+
+  Triage accuracy held up with the new prompt: 93% exact (94% on v1), 0
+  emergent misses, 16 of 16 subtle cases caught.
+- UI:
+  - the AI engine panel shows early bed requests (made, needed, missed) and boarding time saved
+  - the patient drawer marks "Likely admission · bed requested at triage"
+  - "Why it matters" says "more" or "fewer" instead of showing negative counts, and adds a line for bed time freed
+
+**7. Results on the recorded demo seeds** (24 h after opening, manual → AI):
+
+| | Seed 3 normal | Seed 7 normal | Seed 3 surge | Seed 7 surge |
+|---|---|---|---|---|
+| Avg wait (min) | 98 → 54 | 94 → 45 | 221 → 157 | 212 → 152 |
+| P90 wait (min) | 278 → 131 | 315 → 101 | 422 → 337 | 517 → 270 |
+| Walk-in SLO breaches | 16 → 0 | 16 → 0 | 70 → 46 | 47 → 25 |
+| Under-triaged | 28 → 5 | 27 → 6 | 52 → 9 | 60 → 9 |
+| Left without being seen | 12 → 0 | 5 → 0 | 49 → 17 | 37 → 19 |
+| Deteriorated while waiting | 8 → 11 | 11 → 13 | 39 → 31 | 52 → 39 |
+| …of which CTAS 3, after their target time | 5 → 7 | 6 → 6 | 29 → 22 | 29 → 24 |
+
+- Before the fix, normal-day deteriorations were 8 → 12 and 11 → 18. The
+  early bed request closed most of that gap, but on these two seeds the AI
+  ED still has slightly more.
+- These two seeds are among the less favourable of the 12 days. Over 12
+  seeds, the same 60-minute lever gives about −31% (with perfect prediction;
+  Claude's recall is 87%).
+- Under surge, the AI ED has 20–25% fewer deteriorations.
+
+**8. What we are *not* claiming.**
+- **Zero CTAS 3 deteriorations.** Both EDs share the same 20 beds with about
+  half of them held by boarders, and some patients deteriorate within minutes
+  of arrival. Zero would be neither achievable nor credible to a clinical audience.
+- **Simulated outcomes as evidence.** Effect sizes come from a calibrated
+  simulation, not clinical evidence.
+
+**Presentation framing:**
+- Better triage alone doesn't reduce harm; it reshuffles who waits.
+- Harm falls when the AI frees capacity: predicting admissions at triage
+  turns a 4–10 h boarding problem into earlier bed requests.
+- We tested this honestly, including the experiments that failed.
+
+### API spend, day 2
+
+| Item | Calls | Cost (approx.) |
+|---|---|---|
+| v1 recordings (4 seeds) | 713 | $0.36 |
+| v2 eval set + recordings | 1,322 | $0.67 |
+| **Running total** | | **about $2.20** |
+
+Costs are at the list prices in our price table.
+
+### End of day state
+
+- 27 tests passing.
+- Commits `d4f6a6e`, `80ddf60` and `9f238ae` are local only (not pushed).
+- The database needs `ALTER TABLE triage_assessments ADD COLUMN admit_predicted boolean`.
+  It is already applied locally; `initdb` on a fresh database creates it.
+- Recorded demo seeds (`ctas-v2`): seeds 3 and 7, normal and 1.5× surge, opening Fri 14:00.
 
 ---
 
@@ -142,9 +314,13 @@ them against the SLI/SLO:
 
 ### Phase 6: Demo polish (next)
 
-- [ ] **Warm start:** fast-forward so demos open on a loaded, steady-state ED instead of an empty one.
-- [ ] **Scenario presets:** e.g. evening surge, quiet start then a sudden rush. Each one is pre-recorded for offline replay.
-- [ ] **Recorded seeds** whose start times match the UI defaults. The replay cache depends on start time, and the current recordings are at 08:00 while the UI default is 10:00.
+- [x] **Warm start** (day 2).
+- [x] **Recorded seeds** matching the UI defaults: 3 and 7, normal and surge, opening 14:00 (day 2).
+- [x] **Deterioration fix:** early bed requests from admission prediction (day 2).
+- [ ] **Scenario presets:** time-limited surges (e.g. a 3–4 h evening rush). A 24-hour 1.5× surge overwhelms both EDs, which isn't realistic. Pre-record each preset.
+- [ ] **Choose demo seeds** representative of the 12-seed average, and disclose how they were chosen. Seeds 3 and 7 are less favourable than average on deteriorations.
+- [ ] **Check the 60-minute boarding assumption** against published effect sizes for early bed requests and admission prediction.
+- [ ] **Optional:** record more seeds with Claude (about $0.40 each) to confirm the 12-seed estimate with real predictions instead of a diagnostic.
 - [ ] **Narrative content** for each profile (`value-pitch`, `pipeline-pitch`).
 - [ ] **Demo scripts:** one 3-minute walkthrough per profile.
 - [ ] **README refresh.**
@@ -161,3 +337,4 @@ them against the SLI/SLO:
 - Computer-use screen control lacks macOS Accessibility and Screen Recording permissions. Visual checks use headless Chrome on `/?snapshot` instead.
 - Start the dev server with `nohup`, not inside a background task.
 - Never wipe `llm_responses` without asking. It holds the recorded demo runs.
+- Demo seeds 3 and 7 still show slightly more deteriorations in the AI ED on normal days (11 vs 8, 13 vs 11). See day 2.
