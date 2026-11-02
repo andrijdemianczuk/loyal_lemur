@@ -3,8 +3,24 @@
 A tight walkthrough of the ED triage decision-support demo: a **3-minute live
 segment** inside a **10-minute slot**, with a Q&A appendix.
 
+**The question this demo answers:** *which decisions, backed by AI, need to be
+made to improve wait times?* Every section is organized around four decisions.
+The metrics are the evidence for each one.
+
 > Claims use **12-day averages** (12 simulated days, recorded with Claude;
 > see BUILD_LOG.md, day 2). The live seed is only for what's on screen.
+
+## The four decisions (presenter's map)
+
+| # | Decision | Manual ED today | AI-assisted ED | Evidence (12-day average, manual → AI) | Where on screen |
+|---|---|---|---|---|---|
+| 1 | **Who is most urgent?** | Nurse triage under pressure | Claude triages, with a rationale; it can raise acuity above the vital-sign rules, never lower it | Under-triaged 24 → 4 a day (−82%). Exact CTAS match 93% vs 75% for the nurse model, and 16/16 subtle cases caught | "Under-triaged" tile; patient drawer |
+| 2 | **Who is seen next?** | By acuity, then first-come | Within the same acuity, walk-ins approaching 4 hours go first | Walk-ins past 4 h: 12 → 0 a day. Left without being seen: 8 → under 1 | "Longest walk-in wait" chart; ⚠ SLO flags in the queues |
+| 3 | **When do we open more capacity?** | Rapid-assessment zone on fixed hours (11:00–21:00) | Opened whenever physicians are free and walk-ins are waiting | In testing (2 days), holding it back whenever an emergent patient was waiting nearly doubled deteriorations and raised the average wait by 50–90% | Capacity line in each queue panel ("intake closed" vs open) |
+| 4 | **Who will need a bed?** | Bed requested only after the physician decides to admit (in one published study, about 5 hours after triage) | Claude predicts admission at triage, so the bed request starts then | Deteriorations while waiting 7.9 → 5.0 a day (−37%). Without this decision: +4% (12-day test with rules triage). Prediction 77% accurate (best possible 81%) | "Likely admission" chip; AI engine panel; "Why it matters" |
+
+**The thesis:** decisions 1–3 decide *who* waits. Decision 4 frees the beds,
+and that's what reduces harm.
 
 ---
 
@@ -32,18 +48,19 @@ segment** inside a **10-minute slot**, with a Q&A appendix.
 
 ## The 10-minute slot
 
-### 0:00–1:00 · The problem (paused, dashboard visible)
+### 0:00–1:00 · The problem is four decisions (paused, dashboard visible)
 
-> "Emergency departments have two problems at the front door. Triage is done
-> under pressure, so the sickest patients are sometimes under-triaged, and
-> walk-ins with minor problems wait for hours or leave without being seen.
+> "Wait times in an emergency department aren't set by how hard people work.
+> They're set by four decisions, made over and over, all day, under pressure,
+> with incomplete information:
+> **who is most urgent, who is seen next, when to open more capacity, and who
+> is going to need a bed.**
 >
-> I built a simulation to test whether AI decision support helps, and how
-> much. It's two emergency departments side by side: **same patients, same
-> staff, same beds.** The only difference is the decisions. On the right, nurses
-> triage and patients are seen by acuity, then first-come. On the left, Claude
-> triages and the department makes capacity decisions in response to what's
-> happening."
+> I built a simulation to test what happens when AI backs those decisions.
+> It's two emergency departments side by side: **same patients, same staff,
+> same beds.** On the right, those decisions are made the way most departments
+> make them today. On the left, Claude makes the triage call and the
+> department makes the other three decisions from what's happening right now."
 
 Point at: the two queue panels and the legend (blue = AI, orange = manual).
 
@@ -51,41 +68,43 @@ Point at: the two queue panels and the legend (blue = AI, orange = manual).
 
 > "The patients are synthetic but clinically shaped: about 30 presentation
 > types, real vital-sign patterns, medications that match the history, and
-> some deliberately subtle cases that are easy to under-triage. The departments
-> have been running for 30 hours before we open, so we start in a realistic
-> steady state, with patients boarding while they wait for an inpatient bed.
-> The flow model is calibrated so the improvements land in the ranges
-> reported in the literature, not tuned to look dramatic."
+> some deliberately subtle cases that are easy to under-triage. Both
+> departments have been running for 30 hours before we open, so we start in a
+> realistic steady state, with patients boarding while they wait for an
+> inpatient bed. The flow model is calibrated so the improvements land in the
+> ranges reported in the literature, not tuned to look dramatic."
 
 Point at: the warm-start note ("24 patients already in each ED").
 
-### 1:30–4:30 · Live segment (press Resume)
+### 1:30–4:30 · Live: watch the decisions happen (press Resume)
 
 At 2 sim-min/s, 3 real minutes covers 14:00 to 20:00 (checked in a dry run with seed 8).
 
-| When (sim) | Look at | Say |
-|---|---|---|
-| 14:00–15:00 | AI queue, any patient | "Each arrival is triaged by Claude in the AI ED. Here's why it decided what it did." **Click a patient** in the AI queue and show the rationale, red flags and immediate actions. Close the drawer. |
-| 16:00–17:00 | "Under-triaged" tile (about 0 vs 6 by 17:00) | "The nurse under-triages about 1 patient in 5 under pressure. Claude does it about 1 in 100. Those are the patients who end up waiting too long for their acuity." |
-| ~16:30 | The hip-injury patient in the AI queue (the first one with the chip appears at 16:29) | **Click** them and show the "Likely admission · bed requested at triage" chip. "Claude also predicts who'll need admission, so the bed request starts at triage instead of hours later. That's the lever that matters most, and I'll come back to it." |
-| 18:00–20:00 | "Longest walk-in wait" chart | "Here's the evening rush. Watch the manual ED's longest walk-in wait climb toward the 4-hour line. The AI ED re-prioritizes walk-ins before they get there." |
-| ~19:50 | Same chart: the manual ED crosses 4 h (about 245 vs 86 min) | Press **Pause**. "That's a walk-in past four hours in the manual ED. The AI ED's longest is under an hour and a half." |
+| When (sim) | Decision | Look at | Say |
+|---|---|---|---|
+| 14:00–15:00 | **1 · Who is most urgent?** | AI queue: **click any patient** | "Every arrival gets a triage call from Claude, with its reasons: here's the rationale, the red flags, and what the nurse should do now. It can raise acuity above the vital-sign rules but never lower it." Close the drawer. |
+| 16:00–17:00 | **1** | "Under-triaged" tile (about 0 vs 6 by 17:00) | "Under pressure, a nurse under-triages about 1 patient in 5. Claude does it about 1 in 100. Those are the patients who end up waiting too long for how sick they are." |
+| ~16:30 | **4 · Who will need a bed?** | The hip-injury patient in the AI queue (the first chip appears at 16:29): **click** | Show the "Likely admission · bed requested at triage" chip. "Claude also predicts who'll be admitted, so the bed request starts now instead of hours from now. Hold that thought: it turns out to be the decision that matters most." |
+| 18:00–19:50 | **2 · Who is seen next?** | "Longest walk-in wait" chart; ⚠ SLO flags in the manual queue | "Evening rush. In the manual ED it's acuity, then first-come, so a walk-in with a minor problem can wait indefinitely. The AI ED sees walk-ins approaching four hours first, before they get there." |
+| ~19:50 | **2** | Same chart: the manual line crosses 4 h (about 245 vs 86 min) | Press **Pause**. "There: a walk-in past four hours in the manual ED. The AI ED's longest wait is under an hour and a half." |
 
 > **Presenter warning:** during the evening the AI ED's *average* wait tile is
-> **higher** than manual (about 48 vs 38 min at 20:00). That's deliberate: it
-> sees the longest-waiting walk-ins first, which raises the early average but
-> keeps everyone under 4 hours. Don't point at that tile before the skip. If
-> someone notices, it's a strength: "the AI is choosing to protect the tail."
+> **higher** than manual (about 48 vs 38 min at 20:00). That's decision 2 at
+> work: seeing the longest-waiting walk-ins first raises the early average
+> but keeps everyone under 4 hours. Don't point at that tile before the skip.
+> If someone notices, use it: "the AI is choosing to protect the tail, and
+> you'll see it pay off overnight."
 
-### 4:30–4:45 · Skip to the end of the day (press **Skip to end of day**)
+### 4:30–4:45 · Skip the night (press **Skip to end of day**)
 
-It fast-forwards the night in about 10 seconds and pauses exactly at Sat 14:00. Talk over it:
+It fast-forwards in about 10 seconds and pauses exactly at Sat 14:00. Talk over it:
 
-> "Now let's watch the night. The manual department's backlog never clears.
-> Its walk-ins keep waiting while the AI department keeps its rapid-assessment
-> zone open after 9 pm, whenever physicians are free."
+> "**Decision 3: when do we open more capacity?** At 9 pm the manual
+> department closes its rapid-assessment zone, because that's the schedule.
+> The AI department keeps it open whenever physicians are free and patients
+> are waiting. Watch the manual backlog build overnight, and never clear."
 
-### 4:45–6:00 · Results (paused at Sat 14:00)
+### 4:45–6:15 · The four decisions, scored (paused at Sat 14:00)
 
 On screen, seed 8 after 24 hours (manual → AI):
 - average wait 68 → 29 min
@@ -95,56 +114,77 @@ On screen, seed 8 after 24 hours (manual → AI):
 - deteriorated while waiting 8 → 3
 - left without being seen 4 → 0
 
-Point at the tiles, then quote the 12-day averages:
+Point at the tiles while you score each decision with the 12-day averages:
 
-> "That's one typical day. Across 12 simulated days, same patients each day:
-> - average wait to physician from 68 to 32 minutes, and the 90th percentile from about 3 hours to 74 minutes
-> - walk-ins past the 4-hour SLO from 12 a day to none
-> - under-triaged patients from 24 a day to 4
-> - patients leaving without being seen from 8 a day to fewer than 1
-> - patients deteriorating while waiting from 8 a day to 5, about a third fewer
+> "That's one typical day. Across 12 simulated days:
+> - **Who is most urgent:** under-triaged patients fall from 24 a day to 4.
+> - **Who is seen next:** walk-ins past four hours fall from 12 a day to none,
+>   and people leaving without being seen from 8 a day to fewer than 1.
+> - **When to open capacity:** in testing, holding the rapid-assessment zone
+>   back nearly doubled deteriorations. Opening it whenever physicians are
+>   free is one of the biggest levers we found.
+> - **Who will need a bed:** deteriorations while waiting fall by about a third.
 >
-> On the quietest days the AI makes no difference, because there's nothing to
-> optimize. The gains come when the department is under pressure."
+> Together, average wait to physician drops from 68 to 32 minutes, and the
+> 90th percentile from about 3 hours to 74 minutes. On the quietest days it
+> makes no difference, because there's nothing to decide. The gains come under
+> pressure."
 
-### 6:00–8:00 · What we learned (the credibility moment)
+### 6:15–8:00 · Which decision matters most (the credibility moment)
 
-> "The most interesting part was a result that went against us. The first
-> version of the AI department had **more** patients deteriorating while
+> "Here's what surprised us. With only the first three decisions, the AI
+> department was faster, but it had **more** patients deteriorating while
 > waiting than the manual one.
 >
-> We tested the obvious fixes: smarter queue ordering, by vital signs, by risk,
-> even by each patient's *true* risk, which no real system could know. None of
-> them helped. The constraint wasn't who goes first. It was that half the beds
-> were occupied by admitted patients waiting for an inpatient bed.
+> We tried to fix it with smarter versions of decision 2: ordering the queue
+> by vital signs, by risk, even by each patient's *true* risk, which no real
+> system could know. Nothing helped. Who goes first can't fix the real
+> constraint, which was that half the beds were held by admitted patients
+> waiting for an inpatient bed.
 >
-> So the fix was to have Claude predict admission at triage and request the
-> bed then. Claude is 77% accurate on that, against a best possible 81% given
-> the data. Across 12 days, that brought deteriorations down by about a
-> third. On 3 of the 12 days the AI department still had slightly more,
-> which is what a real distribution looks like.
+> Decision 4 fixed it. Predicting admission at triage starts the bed request
+> hours earlier. Claude is 77% accurate there, against a best possible 81% for
+> this data. Across 12 days, deteriorations fell by about a third. On 3 of the
+> 12 days the AI department still had slightly more, which is what a real
+> distribution looks like.
 >
-> The lesson: **better triage alone reshuffles who waits. Harm goes down when
-> AI frees capacity.**"
+> So the answer to *which decisions need AI* is: **triage and queueing decide
+> who waits. Predicting beds is what reduces harm.**"
 
 ### 8:00–10:00 · Close and questions
 
-> "Same staff, same beds, same patients: shorter waits, fewer people walking
-> out, fewer missed emergencies. Every AI decision comes with a rationale, so
-> it can be audited, and there are guardrails: the AI can raise acuity above
-> the vital-sign rules but never lower it, and any failure falls back to the
-> rules. The whole thing runs on a laptop, and the AI calls for a full
+> "Four decisions, made all day long: who's most urgent, who's next, when to
+> open capacity, who'll need a bed. Back them with AI, with the same staff,
+> beds and patients, and you get shorter waits, fewer people walking out and
+> fewer missed emergencies. Every decision comes with a rationale, so it can
+> be audited. The AI can raise acuity above the vital-sign rules but never
+> lower it, any failure falls back to the rules, and it's designed so a
+> nurse confirms every call. The whole thing runs on a laptop, and the AI calls for a full
 > simulated day cost cents."
 
 **Pipeline-pitch profile:** add 30 s here on the event stream panel: "Every
-arrival, vital sign, triage decision and model call is a versioned event. The
-patient events carry synthetic PHI, so the pipeline can mask, route and reduce
-the data before it reaches analytics, and the model calls give you AI
-observability: latency, cost and escalations."
+one of those decisions, and every arrival, vital sign and model call, is a
+versioned event. The patient events carry synthetic PHI, so the pipeline can
+mask, route and reduce the data before it reaches analytics. The decision
+and model-call events give you AI observability: what was decided, why, how
+fast and at what cost."
 
 ---
 
 ## Q&A appendix
+
+**Which of the four decisions matters most?**
+We didn't isolate every decision, but here's what we measured:
+- **Decision 3 (opening capacity):** holding the zone back raised the average wait by 50–90% on the days we tested.
+- **Decision 4 (beds):** cut the average wait by about a quarter on its own (47 → 36 min over 12 days, in a test with rules triage and ideal prediction) and is the only one that reduced deteriorations.
+- **Decision 2 (who's next):** this is what eliminates 4-hour breaches.
+- **Decision 1 (triage):** this makes the others safe, because you can't prioritize well on the wrong acuity.
+
+**Is the AI making these decisions on its own?**
+No. It's decision support. The nurse confirms every triage call; the queue,
+the rapid-assessment zone and the bed requests are recommendations a charge
+nurse or bed manager acts on. In the simulation they're applied automatically
+to measure their effect.
 
 **Is this real patient data?**
 No. It's synthetic, generated per seed, with ground-truth acuity that the
