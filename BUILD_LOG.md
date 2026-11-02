@@ -290,13 +290,75 @@ against published effect sizes before we quote it as realistic.
   turns a 4–10 h boarding problem into earlier bed requests.
 - We tested this honestly, including the experiments that failed.
 
+### 12-day results with Claude, and choosing demo seeds
+
+Seeds 3 and 7 looked unfavourable, so we recorded 10 more normal days with
+Claude (seeds 1, 2, 4–6, 8–12). All 12 replay exactly offline.
+
+Per simulated day, averaged over 12 days:
+
+| Metric | Manual | AI | Change |
+|---|---|---|---|
+| Avg wait to physician | 68 min | 32 min | −53% |
+| P90 wait | 177 min | 74 min | −58% |
+| Walk-ins past 4 h SLO | 12.1 | 0 | −100% |
+| Under-triaged at intake | 24.2 | 4.4 | −82% |
+| Deteriorated while waiting | 7.9 | 5.0 | −37% |
+| Left without being seen | 8.4 | 0.6 | −93% |
+| Seen after true CTAS target | 47.8 | 31.7 | −34% |
+
+- **The day-to-day spread is large.** Manual average waits range from 10 min
+  (quiet days) to 260 min (seed 9). On the quietest days the AI ED is slightly
+  slower (10 → 12 min), because there is nothing to optimize.
+- **Deteriorations fall on 9 of 12 days.** The AI ED is slightly worse on 3:
+  seeds 1 (2 → 3), 3 (8 → 11) and 7 (11 → 13).
+- **Seed selection method:** rank each day by how close its relative
+  AI-vs-manual changes (avg wait, P90, deteriorations, SLO breaches, walk-outs,
+  under-triage) and its busyness are to the 12-day average.
+  - **Seed 8** ranked first, so it's the demo seed: wait 68 → 29 min, deteriorations 8 → 3, SLO breaches 7 → 0.
+  - **Seed 5** ranked second, so it's the backup: wait 69 → 41 min, deteriorations 8 → 4.
+  - Seeds 3 and 7 ranked 3rd and 4th.
+- **Credibility note:** with the bed lever, the headline numbers sit above
+  the ~20–40% range the flow levers were calibrated to. We quote them as the
+  combined effect of flow levers plus early bed requests, and we disclose
+  that zero SLO breaches is a property of the SLO-aware queue in this
+  simulation.
+
+### Literature check: is a 60-minute boarding cut realistic?
+
+**Short answer:** yes. It's conservative compared with the best available
+evidence, but that evidence is simulation and retrospective, not prospective
+trials.
+
+| Source | Type | Finding |
+|---|---|---|
+| [Cheng, Argon, Ganesaraman & Ziya (2026), *Proactive Inpatient Bed Requests for ED Admissions*, arXiv 2607.15432](https://arxiv.org/abs/2607.15432) | Simulation based on data from a large ED (preprint) | From a 248-min boarding baseline, proactive bed requests cut boarding by about 70–170 min (30–70%) and ED length of stay by 6–15%, at a cost of about 1–95 min of idle bed time. A simple "greedy" policy cut boarding by about 152 min and length of stay by about 58 min, with about 35 min idle. |
+| Chen et al. (2023), *Using Hospital Admission Predictions at Triage for Improving Patient Length of Stay in Emergency Departments*, Operations Research ([doi:10.1287/opre.2022.2405](https://pubsonline.informs.org/doi/10.1287/opre.2022.2405)) | Simulation (academic ED data) | Individualized early bed requests at triage reduce ED length of stay "without generating excessive false early bed requests." We could not verify the exact figures (paywalled). |
+| [Triage nurse prediction of hospital admission (PubMed 22464226)](https://pubmed.ncbi.nlm.nih.gov/22464226) | Prospective, one community ED | Nurses predicted admission with 75.6% sensitivity and 84.5% specificity. It took about 5 hours from triage to an inpatient bed request. |
+| [Hong et al. (2018), PLOS ONE](https://journals.plos.org/plosone/article?id=10.1371/journal.pone.0201016) | Retrospective, 560,486 visits | Triage-only models predict admission with AUC of about 0.87. |
+| [Qiu et al. (2015), Health Care Management Science](https://link.springer.com/article/10.1007/s10729-014-9283-1) | Model tested on VA data | A bed-reservation policy driven by triage predictions reduced boarding times. |
+
+**How our model compares:**
+- **Size of the cut:** our boarding is 4–10 h (mean 420 min). A 60-min cut on
+  correctly predicted admissions is about 14% of mean boarding, below the
+  whole 30–70% simulated range.
+- **Predictor quality:** Claude's recall (87%) and precision (65%) are in the
+  same range as triage nurses and published models.
+- **Gap:** our model gives false alarms no cost. In reality they idle an
+  inpatient bed for a while (about 1–95 min in the Cheng et al. simulation),
+  which costs the hospital rather than the ED.
+- **Honest caveat:** no prospective trial measuring boarding reductions has
+  been published yet. Our search found simulations and retrospective models
+  only.
+
 ### API spend, day 2
 
 | Item | Calls | Cost (approx.) |
 |---|---|---|
 | v1 recordings (4 seeds) | 713 | $0.36 |
 | v2 eval set + recordings | 1,322 | $0.67 |
-| **Running total** | | **about $2.20** |
+| 10 more seeds (v2) | 2,781 | $1.48 |
+| **Running total** | | **about $3.70** |
 
 Costs are at the list prices in our price table.
 
@@ -306,7 +368,11 @@ Costs are at the list prices in our price table.
 - Commits `d4f6a6e`, `80ddf60` and `9f238ae` are local only (not pushed).
 - The database needs `ALTER TABLE triage_assessments ADD COLUMN admit_predicted boolean`.
   It is already applied locally; `initdb` on a fresh database creates it.
-- Recorded demo seeds (`ctas-v2`): seeds 3 and 7, normal and 1.5× surge, opening Fri 14:00.
+- Recorded demo seeds (`ctas-v2`), all opening Fri 14:00:
+  - seeds 1–12 at normal volume
+  - seeds 3 and 7 at 1.5× surge
+- Demo seed: **8** (backup **5**).
+- `docs/DEMO_SCRIPT.md` is filled in with the 12-day numbers and the evidence answer.
 
 ---
 
@@ -390,9 +456,10 @@ something to learn.
 - [x] **Recorded seeds** matching the UI defaults: 3 and 7, normal and surge, opening 14:00 (day 2).
 - [x] **Deterioration fix:** early bed requests from admission prediction (day 2).
 - [ ] **Scenario presets:** time-limited surges (e.g. a 3–4 h evening rush). A 24-hour 1.5× surge overwhelms both EDs, which isn't realistic. Pre-record each preset.
-- [ ] **Choose demo seeds** representative of the 12-seed average, and disclose how they were chosen. Seeds 3 and 7 are less favourable than average on deteriorations.
-- [ ] **Check the 60-minute boarding assumption** against published effect sizes for early bed requests and admission prediction.
-- [ ] **Optional:** record more seeds with Claude (about $0.40 each) to confirm the 12-seed estimate with real predictions instead of a diagnostic.
+- [x] **Choose demo seeds:** 8 (backup 5), from 12 recorded days (day 2).
+- [x] **Check the 60-minute boarding assumption:** it's conservative against the published simulations (day 2).
+- [ ] **Dry run of the delivery script** against the live dashboard: timings and on-screen moments.
+- [ ] **Optional realism:** give false-positive bed requests a cost (idle inpatient bed time).
 - [ ] **Narrative content** for each profile (`value-pitch`, `pipeline-pitch`).
 - [ ] **Demo scripts:** one 3-minute walkthrough per profile.
 - [ ] **README refresh.**
@@ -409,4 +476,4 @@ something to learn.
 - Computer-use screen control lacks macOS Accessibility and Screen Recording permissions. Visual checks use headless Chrome on `/?snapshot` instead.
 - Start the dev server with `nohup`, not inside a background task.
 - Never wipe `llm_responses` without asking. It holds the recorded demo runs.
-- Demo seeds 3 and 7 still show slightly more deteriorations in the AI ED on normal days (11 vs 8, 13 vs 11). See day 2.
+- The AI ED has slightly more deteriorations on 3 of the 12 recorded days (seeds 1, 3, 7). Disclose this if asked; see day 2.

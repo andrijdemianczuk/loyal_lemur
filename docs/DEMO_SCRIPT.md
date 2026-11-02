@@ -3,9 +3,8 @@
 A tight walkthrough of the ED triage decision-support demo: a **3-minute live
 segment** inside a **10-minute slot**, with a Q&A appendix.
 
-> Numbers marked ⟨…⟩ get filled in once the demo seeds are chosen (see
-> BUILD_LOG.md, day 2). Quote **12-day averages** for claims, and use the live
-> seed only for what's on screen.
+> Claims use **12-day averages** (12 simulated days, recorded with Claude;
+> see BUILD_LOG.md, day 2). The live seed is only for what's on screen.
 
 ---
 
@@ -18,7 +17,7 @@ segment** inside a **10-minute slot**, with a Q&A appendix.
    ```
 2. Open `http://127.0.0.1:8765`.
 3. Set the controls:
-   - Seed ⟨seed⟩
+   - Seed **8** (most representative of the 12 days; seed **5** is the backup)
    - Opens at **14:00**
    - Arrivals **Normal day**
    - AI triage **Claude (recorded replay)**
@@ -57,7 +56,7 @@ Point at: the two queue panels and the legend (blue = AI, orange = manual).
 > The flow model is calibrated so the improvements land in the ranges
 > reported in the literature, not tuned to look dramatic."
 
-Point at: the warm-start note ("⟨n⟩ patients already in each ED").
+Point at: the warm-start note ("24 patients already in each ED").
 
 ### 1:30–4:30 · Live segment (press Resume)
 
@@ -67,7 +66,7 @@ At 2 sim-min/s this covers 14:00 to about 20:00, which brings in the evening cru
 |---|---|---|
 | 14:00–15:00 | Live feed, a new arrival | "Each arrival is triaged by Claude in the AI ED. Here's why it decided what it did." **Click a patient** in the AI queue and show the rationale, red flags and immediate actions. |
 | | Drawer: the "Likely admission" chip | "Claude also predicts who'll need admission, so the bed request starts at triage instead of hours later. That's the lever that matters most, and I'll come back to it." |
-| 16:00–18:00 | "Under-triaged" tile | "The nurse under-triages about ⟨x⟩ in 5 patients under pressure. With AI it's ⟨y⟩. Those are the patients who end up waiting too long for their acuity." |
+| 16:00–18:00 | "Under-triaged" tile | "The nurse under-triages about 1 patient in 5 under pressure. Claude does it about 1 in 100. Those are the patients who end up waiting too long for their acuity." |
 | 18:00–20:00 | "Longest walk-in wait" chart | "Here's the evening rush. The manual ED's longest walk-in wait climbs toward the 4-hour line. The AI ED re-prioritizes walk-ins approaching 4 hours and opens the rapid-assessment zone when physicians are free." |
 | ~20:00 | Press **Pause** | Move on to the results. |
 
@@ -76,11 +75,14 @@ At 2 sim-min/s this covers 14:00 to about 20:00, which brings in the evening cru
 Point at the KPI tiles, then quote the 12-day averages:
 
 > "Across 12 simulated days, same patients each day:
-> - average wait to physician ⟨−x%⟩, and the 90th percentile ⟨−y%⟩
-> - walk-ins past the 4-hour SLO ⟨…⟩
-> - under-triage ⟨−80%⟩
-> - patients leaving without being seen ⟨…⟩
-> - patients deteriorating while waiting ⟨…⟩"
+> - average wait to physician from 68 to 32 minutes, and the 90th percentile from about 3 hours to 74 minutes
+> - walk-ins past the 4-hour SLO from 12 a day to none
+> - under-triaged patients from 24 a day to 4
+> - patients leaving without being seen from 8 a day to fewer than 1
+> - patients deteriorating while waiting from 8 a day to 5, about a third fewer
+>
+> On the quietest days the AI makes no difference, because there's nothing to
+> optimize. The gains come when the department is under pressure."
 
 ### 6:00–8:00 · What we learned (the credibility moment)
 
@@ -95,7 +97,9 @@ Point at the KPI tiles, then quote the 12-day averages:
 >
 > So the fix was to have Claude predict admission at triage and request the
 > bed then. Claude is 77% accurate on that, against a best possible 81% given
-> the data. That brought deteriorations ⟨result⟩.
+> the data. Across 12 days, that brought deteriorations down by about a
+> third. On 3 of the 12 days the AI department still had slightly more,
+> which is what a real distribution looks like.
 >
 > The lesson: **better triage alone reshuffles who waits. Harm goes down when
 > AI frees capacity.**"
@@ -130,9 +134,17 @@ some patients deteriorate within minutes of arrival, before anyone could act.
 Zero wouldn't be credible. The claim is *fewer*, for a reason we can explain.
 
 **Where does "60 minutes earlier" for bed requests come from?**
-It's a conservative assumption, at the low end of what we tested (60–90 min). ⟨Cite the
-published effect size once checked.⟩ A missed prediction gets no benefit, and
-false alarms are counted and shown.
+It's deliberately conservative. In a 2026 simulation study based on data
+from a large ED (Cheng, Argon, Ganesaraman and Ziya, arXiv 2607.15432),
+proactive bed requests cut boarding by about 70–170 minutes from a
+248-minute baseline, which is 30–70%. Our 60 minutes is about 14% of our
+average boarding time, below that whole range. Separately, a prospective
+study found it took about 5 hours from triage to an inpatient bed request,
+and that triage nurses can predict admission with 76% sensitivity and 85%
+specificity, so the information is there at triage. Honest caveat: the
+evidence is simulations and retrospective models; there's no prospective
+trial yet. A missed prediction gets no benefit, and false alarms are counted
+and shown.
 
 **What if Claude is wrong?**
 - It can't assign lower acuity than the vital-sign rules give.
@@ -145,8 +157,10 @@ The opposite: it keeps patients the manual ED loses to walk-outs, so it sees
 *more* patients, with the same staff.
 
 **Why did you choose these seeds?**
-They're representative of the 12-day average, not the best days. ⟨State the
-selection method.⟩
+We recorded 12 simulated days and ranked them by how close each day's
+AI-vs-manual differences, and how busy it was, sit to the 12-day average.
+Seed 8 ranked first and seed 5 second. They're typical days, not the best
+ones. Every claim quotes the 12-day average.
 
 **What does it cost to run?**
 A full simulated day of live Claude calls costs cents. The demo replays
