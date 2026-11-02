@@ -103,6 +103,17 @@ def resume(request: Request) -> dict[str, bool]:
     return {"ok": True}
 
 
+class SkipRequest(BaseModel):
+    hours_after_opening: float = Field(24, gt=0, le=72)
+
+
+@app.post("/api/skip")
+def skip(body: SkipRequest, request: Request) -> dict[str, str | None]:
+    """Fast-forward to a point after opening and pause there."""
+    until = _sim(request).skip_to(body.hours_after_opening)
+    return {"until": until.isoformat() if until else None}
+
+
 @app.post("/api/speed")
 def speed(body: SpeedRequest, request: Request) -> dict[str, bool]:
     _sim(request).set_speed(body.speed)

@@ -42,6 +42,12 @@ class SimClock:
         self._rebase()
         self._paused = True
 
+    def pause_at(self, t: datetime) -> None:
+        """Pause with simulated time set exactly to ``t``."""
+        self._anchor_sim = t
+        self._anchor_real = time.monotonic()
+        self._paused = True
+
     def resume(self) -> None:
         self._anchor_real = time.monotonic()
         self._paused = False

@@ -51,6 +51,8 @@ class SimulationManager:
         self._sampler: asyncio.Task[None] | None = None
         self._lock = asyncio.Lock()
         self.warming_up = False
+        self.skip_until: datetime | None = None
+        self._skip_restore_speed: float | None = None
 
     # -- controls -----------------------------------------------------------
 
@@ -61,7 +63,10 @@ class SimulationManager:
                 self.settings,
                 "rules" if params.ai_mode == "rules" else "claude",
                 offline=params.ai_mode == "replay",
-                blocking=False,
+                # Replays are instant cache lookups: wait for each one so the
+                # run matches the recording exactly at any speed. Live API
+                # calls stay non-blocking (provisional rules, applied late).
+                blocking=params.ai_mode == "replay",
             )
             opens_at = datetime.fromisoformat(params.start)
             engine = FeedEngine(
@@ -75,6 +80,7 @@ class SimulationManager:
                 scenario=f"ui:{params.ai_mode}",
             )
             self.engine = None
+            self.skip_until = None
             self.params = params
             self.series = []
             self.feed.recent.clear()
@@ -113,6 +119,29 @@ class SimulationManager:
         if self.engine:
             self.engine.clock.resume()
 
+    def skip_to(self, hours_after_opening: float = 24, speed: float = 120) -> datetime | None:
+        """Fast-forward (charts keep animating) and pause exactly at
+        ``hours_after_opening`` after the run opened."""
+        engine = self.engine
+        if engine is None:
+            return None
+        until = engine.clock.start + timedelta(hours=hours_after_opening)
+        if engine.processed_until >= until:
+            return None
+        self.skip_until = until
+        self._skip_restore_speed = engine.clock.speed
+        engine.stop_at = until
+        engine.clock.set_speed(speed)
+        engine.clock.resume()
+        return until
+
+    def _finish_skip(self, engine: FeedEngine) -> None:
+        if self.skip_until is not None and engine.processed_until >= self.skip_until:
+            engine.clock.pause_at(self.skip_until)
+            engine.clock.set_speed(self._skip_restore_speed or 2.0)
+            engine.stop_at = None
+            self.skip_until = None
+
     def set_speed(self, speed: float) -> None:
         if self.engine:
             self.engine.clock.set_speed(speed)
@@ -130,6 +159,7 @@ class SimulationManager:
         engine = self.engine
         if engine is None:
             return
+        self._finish_skip(engine)
         with engine.lock:
             t = engine.processed_until
             while self._next_point is not None and self._next_point <= t:
@@ -173,6 +203,7 @@ class SimulationManager:
                 "speed": engine.clock.speed,
                 "running": engine._task is not None and not engine._task.done(),
                 "warmup": engine.warmup,
+                "skipping": self.skip_until is not None,
             },
             "arms": arms,
             "series": self.series,

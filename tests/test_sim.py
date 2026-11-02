@@ -112,3 +112,12 @@ def test_feed_engine_populates_both_arms(db):
     finally:
         with session_scope() as s:
             s.delete(s.get(SimRun, run_id))
+
+
+def test_clock_pause_at_exact_time():
+    clock = SimClock(START, speed=60)
+    target = START + timedelta(hours=3)
+    clock.pause_at(target)
+    assert clock.paused and clock.now() == target
+    clock.set_speed(2)
+    assert clock.now() == target

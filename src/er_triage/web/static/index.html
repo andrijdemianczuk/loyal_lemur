@@ -61,6 +61,10 @@
   <span class="divider"></span>
   <button class="btn" @click="post(snap.run?.paused ? '/api/resume' : '/api/pause')" :disabled="!snap.run"
           x-text="snap.run?.paused ? 'Resume' : 'Pause'"></button>
+  <button class="btn" @click="post('/api/skip', { hours_after_opening: 24 })"
+          :disabled="!snap.run || snap.run.skipping || snap.run.elapsed_min >= 1440"
+          title="Fast-forward to 24 hours after opening and pause there"
+          x-text="snap.run?.skipping ? 'Skipping ahead…' : 'Skip to end of day'"></button>
   <label class="speed">Speed
     <input type="range" min="0" :max="speeds.length - 1" step="1" x-model.number="speedIdx" @change="setSpeed()" :disabled="!snap.run">
     <span class="speed-val" x-text="speeds[speedIdx] + ' sim-min / s'"></span>

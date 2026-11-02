@@ -351,6 +351,36 @@ trials.
   been published yet. Our search found simulations and retrospective models
   only.
 
+### Dry run of the delivery script
+
+We ran the script for real against the dashboard (seed 8, paused at 14:00,
+resumed at 2 sim-min/s) and sampled the screen every 15 seconds.
+
+**What worked:**
+- 3 real minutes covers exactly 14:00–20:00.
+- By about 19:50 the manual ED's longest walk-in crosses 4 hours, while the AI ED's longest is 86 min. That's a natural climax to pause on.
+- By 20:00, under-triage is 0 vs 10 and SLO breaches 0 vs 2.
+
+**What it caught:**
+1. **The average-wait tile favours manual during the evening** (48 vs 38 min at 20:00). The SLO-aware queue deliberately sees long-waiting walk-ins first, which raises the early average. Hour by hour, the AI pulls ahead at 23:00 and finishes the day at 29 vs 68 min, because the manual ED's backlog never clears overnight. The script had you pointing at that tile at 20:00 and quoting −53%.
+2. **The first queued patient with a "Likely admission" chip appears at 16:29**, not at 14:00–15:00 as scripted.
+3. **The backup seed (5) had the same problem for longer:** the AI trailed on average wait until 05:00.
+4. **Fast-forwarding at 60× broke replay fidelity.** In replay mode the dashboard didn't wait for recorded decisions, so at high speed 18 arrived late, the patients' paths diverged, and 11 cache misses followed. Under-triage showed 7 instead of the recorded 2.
+5. **Pausing by hand at 60× overshoots** by about an hour.
+
+**Fixes:**
+- **Replay mode now waits for each recorded decision.** A cache lookup is instant, so this costs nothing, and replays are now identical to the recording at any speed. Live API mode is unchanged (provisional rules, then the late decision is applied).
+- **New "Skip to end of day" button** (`POST /api/skip`). It fast-forwards at 120× with the charts animating and pauses exactly 24 h after opening (`SimClock.pause_at`). Verified: 10.5 s, Sat 14:00 exactly, 0 late decisions, 0 fallbacks, and every number identical to the recording.
+- **Script restructured:**
+  - live segment from 14:00 to the 4-hour crossing at about 19:50
+  - the admission chip moved to about 16:30
+  - a presenter warning about the evening average tile
+  - a 10-second skip over the night, narrated
+  - results at Sat 14:00
+  - backup seed changed to **4**: a harder day where the AI leads from the first hour (134 → 48 min)
+  - new Q&A answers for the evening average and the 11-hour overnight walk-in wait
+- **Realism flag (not changed):** a manual walk-in waits about 11 hours overnight. Our walk-out model is simple, and more of those patients would leave in reality.
+
 ### API spend, day 2
 
 | Item | Calls | Cost (approx.) |
@@ -371,7 +401,8 @@ Costs are at the list prices in our price table.
 - Recorded demo seeds (`ctas-v2`), all opening Fri 14:00:
   - seeds 1–12 at normal volume
   - seeds 3 and 7 at 1.5× surge
-- Demo seed: **8** (backup **5**).
+- Demo seed: **8** (backup **4**).
+- 28 tests passing.
 - `docs/DEMO_SCRIPT.md` is filled in with the 12-day numbers and the evidence answer.
 
 ---
@@ -446,6 +477,12 @@ something to learn.
     late decisions are logged rather than silently dropped. This is what
     lets the AI be fast without being fragile. (Day 1)
 
+17. **Dry-run the demo against the real system, not the numbers.** Every
+    number in the script was correct, but the order in which they appear on
+    screen wasn't. At 20:00 the dashboard showed the opposite of what the
+    script said. The dry run also found that fast-forwarding broke replay
+    fidelity, which no test covered. (Day 2)
+
 ---
 
 ## Remaining work
@@ -458,7 +495,9 @@ something to learn.
 - [ ] **Scenario presets:** time-limited surges (e.g. a 3–4 h evening rush). A 24-hour 1.5× surge overwhelms both EDs, which isn't realistic. Pre-record each preset.
 - [x] **Choose demo seeds:** 8 (backup 5), from 12 recorded days (day 2).
 - [x] **Check the 60-minute boarding assumption:** it's conservative against the published simulations (day 2).
-- [ ] **Dry run of the delivery script** against the live dashboard: timings and on-screen moments.
+- [x] **Dry run of the delivery script** (day 2): found 5 issues, all fixed.
+- [ ] **Rehearse the script** in person end to end, timed, at the target screen resolution.
+- [ ] **Optional realism:** make walk-outs more likely after very long overnight waits.
 - [ ] **Optional realism:** give false-positive bed requests a cost (idle inpatient bed time).
 - [ ] **Narrative content** for each profile (`value-pitch`, `pipeline-pitch`).
 - [ ] **Demo scripts:** one 3-minute walkthrough per profile.
