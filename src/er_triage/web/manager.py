@@ -21,6 +21,7 @@ SERIES_EVERY = timedelta(minutes=5)
 FEED_TYPES = {
     EventType.PATIENT_ARRIVED, EventType.TRIAGE_ASSESSED, EventType.PATIENT_DETERIORATED,
     EventType.SLO_BREACH, EventType.PATIENT_DEPARTED, EventType.LLM_CALL,
+    EventType.AI_DECISION,
 }
 
 # Rough list prices (USD per million tokens) for the cost readout.
@@ -42,8 +43,13 @@ class SimulationManager:
     def __init__(self, settings: Settings, bus: EventBus) -> None:
         self.settings = settings
         self.bus = bus
-        self.feed = MemorySink(keep=300, types={str(t) for t in FEED_TYPES})
+        # Per-type event counts for the pipeline panel.
+        self.feed = MemorySink(keep=0, types={str(t) for t in FEED_TYPES})
         bus.add_sink(self.feed)
+        # Kept apart so busy event types can't push decisions out of view.
+        self.decisions = MemorySink(keep=100, types={str(EventType.AI_DECISION)},
+                                    name="memory-decisions")
+        bus.add_sink(self.decisions)
         self.engine: FeedEngine | None = None
         self.params: RunParams | None = None
         self.series: list[dict[str, Any]] = []
@@ -84,6 +90,7 @@ class SimulationManager:
             self.params = params
             self.series = []
             self.feed.recent.clear()
+            self.decisions.recent.clear()
             # Snapshots report "warming up" until the engine is handed over.
             self.warming_up = params.warmup_hours > 0
             try:
@@ -183,7 +190,7 @@ class SimulationManager:
         base = {
             "profile": self.settings.demo_profile,
             "params": asdict(self.params) if self.params else asdict(RunParams()),
-            "events": list(self.feed.recent)[-60:],
+            "decisions": list(self.decisions.recent)[-40:],
             "telemetry": self._telemetry(),
             "warming_up": self.warming_up,
         }
@@ -246,6 +253,7 @@ class SimulationManager:
                           "false_pos": ed.counters.admit_false_pos,
                           "false_neg": ed.counters.admit_false_neg,
                           "boarding_saved_min": round(ed.counters.boarding_saved_min)},
+            "decisions": dict(ed.counters.decisions),
         }
 
     @staticmethod

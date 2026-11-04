@@ -30,6 +30,7 @@ class EventType(StrEnum):
     METRICS_SNAPSHOT = "metrics.snapshot"
     SLO_BREACH = "slo.breach"
     LLM_CALL = "llm.call"
+    AI_DECISION = "ai.decision"
 
 
 class Event(BaseModel):

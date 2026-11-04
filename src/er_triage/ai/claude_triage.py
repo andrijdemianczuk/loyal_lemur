@@ -245,6 +245,7 @@ class ClaudeTriager:
             red_flags=flags,
             fast_track=out.fast_track_eligible and level >= 3,
             admit_predicted=out.likely_admission,
+            rules_ctas=rules.ctas,
             model=call.model,
             latency_ms=call.latency_ms,
             input_tokens=call.input_tokens,

@@ -32,6 +32,13 @@ function app() {
     speedIdx: 2,
     kpis: KPIS,
     showTruth: false,
+    decFilter: null,
+    decisionKinds: [
+      { key: "triage", label: "triage raised above rules" },
+      { key: "queue", label: "seen out of CTAS order" },
+      { key: "intake", label: "zone used after hours" },
+      { key: "bed", label: "beds requested at triage" },
+    ],
     theme: "light",
     detail: null,
     busy: false,
@@ -183,38 +190,22 @@ function app() {
     },
 
     // -- live feed -----------------------------------------------------------
-    feedItems() {
+    decisionItems() {
       const out = [];
-      const pipeline = this.snap.profile === "pipeline-pitch";
-      for (const e of this.snap.events.slice().reverse()) {
+      for (const e of (this.snap.decisions || []).slice().reverse()) {
         const d = e.data || {};
-        let text = null, kind = "info";
-        switch (e.event_type) {
-          case "patient.arrived":
-            text = `Arrived: ${d.age}${d.sex} · ${d.chief_complaint} (${d.arrival_mode === "ambulance" ? "ambulance" : "walk-in"})`;
-            break;
-          case "slo.breach":
-            text = `⚠ Walk-in passed the 4 h SLO (assigned CTAS ${d.assigned_ctas})`; kind = "alert";
-            break;
-          case "patient.deteriorated":
-            text = `↓ Deteriorated after ${Math.round(d.wait_min)} min waiting: CTAS ${d.previous_ctas} → ${d.current_ctas}`; kind = "alert";
-            break;
-          case "patient.departed":
-            if (d.disposition === "lwbs") { text = "Left without being seen"; kind = "alert"; }
-            break;
-          case "triage.assessed":
-            if (d.reassessment && d.previous_ctas && d.ctas < d.previous_ctas) {
-              text = `${d.source === "ai" ? "Claude" : d.source === "nurse" ? "Nurse" : "Rules"} re-triaged CTAS ${d.previous_ctas} → ${d.ctas}`;
-            } else if (d.source === "ai" && !d.reassessment && d.ctas <= 2) {
-              text = `Claude: CTAS ${d.ctas}${d.red_flags?.length ? " · " + d.red_flags.slice(0, 2).join("; ") : ""}`;
-            }
-            break;
-          case "llm.call":
-            if (pipeline) text = `llm.call ${d.model} · ${d.replayed ? "replayed" : d.latency_ms + " ms"} · ${d.input_tokens}+${d.output_tokens} tok`;
-            break;
+        if (this.decFilter && d.decision !== this.decFilter) continue;
+        const who = `${d.age}${d.sex} ${d.complaint.charAt(0).toLowerCase()}${d.complaint.slice(1)}`;
+        let tag, text;
+        switch (d.decision) {
+          case "triage": tag = "Triage"; text = `Raised to CTAS ${d.ctas} (rules: ${d.rules_ctas}): ${who}`; break;
+          case "queue": tag = "Queue"; text = `Seen ahead of ${d.moved_ahead_of}: ${who}`; break;
+          case "intake": tag = "Zone"; text = `Rapid-assessment zone kept open: ${who}`; break;
+          case "bed": tag = "Bed"; text = `Bed requested at triage: ${who}`; break;
+          default: continue;
         }
-        if (text) out.push({ ...e, text, kind });
-        if (out.length >= 40) break;
+        out.push({ ...e, tag, text });
+        if (out.length >= 30) break;
       }
       return out;
     },

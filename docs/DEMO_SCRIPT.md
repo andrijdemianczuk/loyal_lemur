@@ -80,13 +80,18 @@ Point at: the warm-start note ("24 patients already in each ED").
 
 At 2 sim-min/s, 3 real minutes covers 14:00 to 20:00 (checked in a dry run with seed 8).
 
+The **AI decisions** panel (bottom right) logs each time the AI ED acts
+differently from standard practice, with the reason. Its four counters are the
+four decisions. Click any line to open that patient. Counts on seed 8 at 20:00:
+9 triage raised, 9 seen out of order, 0 zone after hours, 19 beds requested.
+
 | When (sim) | Decision | Look at | Say |
 |---|---|---|---|
-| 14:00–15:00 | **1 · Who is most urgent?** | AI queue: **click any patient** | "Every arrival gets a triage call from Claude, with its reasons: here's the rationale, the red flags, and what the nurse should do now. It can raise acuity above the vital-sign rules but never lower it." Close the drawer. |
+| ~15:11 | **1 · Who is most urgent?** | AI decisions: "Triage · Raised to CTAS 2 (rules: 4): 76F epigastric pain". **Click it** | "The vital-sign rules say CTAS 4: she can wait an hour. Claude reads the whole picture: 76, diabetic, epigastric pain and fatigue. That's a possible heart attack, so CTAS 2. Here's its rationale and what the nurse should do now. It can raise acuity above the rules but never lower it." Close the drawer. |
 | 16:00–17:00 | **1** | "Under-triaged" tile (about 0 vs 6 by 17:00) | "Under pressure, a nurse under-triages about 1 patient in 5. Claude does it about 1 in 100. Those are the patients who end up waiting too long for how sick they are." |
-| ~16:30 | **4 · Who will need a bed?** | The hip-injury patient in the AI queue (the first chip appears at 16:29): **click** | Show the "Likely admission · bed requested at triage" chip. "Claude also predicts who'll be admitted, so the bed request starts now instead of hours from now. Hold that thought: it turns out to be the decision that matters most." |
-| 18:00–19:50 | **2 · Who is seen next?** | "Longest walk-in wait" chart; ⚠ SLO flags in the manual queue | "Evening rush. In the manual ED it's acuity, then first-come, so a walk-in with a minor problem can wait indefinitely. The AI ED sees walk-ins approaching four hours first, before they get there." |
-| ~19:50 | **2** | Same chart: the manual line crosses 4 h (about 245 vs 86 min) | Press **Pause**. "There: a walk-in past four hours in the manual ED. The AI ED's longest wait is under an hour and a half." |
+| ~16:03 | **4 · Who will need a bed?** | AI decisions: "Bed · Bed requested at triage: 76M hip injury - fall" (suspected hip fracture). **Click it** | Show the "Likely admission · bed requested at triage" chip. "Claude also predicts who'll be admitted, so the bed request starts now instead of hours from now. Hold that thought: it turns out to be the decision that matters most." |
+| 18:00–19:50 | **2 · Who is seen next?** | AI decisions, "Queue" lines, e.g. 18:57 "Seen ahead of 6: 35M sore throat · waited 3 h 04, approaching the 4 h walk-in limit"; ⚠ SLO flags in the manual queue | "Evening rush. In the manual ED it's acuity, then first-come, so a walk-in with a minor problem can wait indefinitely. The AI ED sees walk-ins approaching four hours first, before they get there. Every one of those is logged with its reason." |
+| ~19:50 | **2** | "Longest walk-in wait" chart: the manual line crosses 4 h (about 245 vs 86 min) | Press **Pause**. "There: a walk-in past four hours in the manual ED. The AI ED's longest wait is under an hour and a half." |
 
 > **Presenter warning:** during the evening the AI ED's *average* wait tile is
 > **higher** than manual (about 48 vs 38 min at 20:00). That's decision 2 at
@@ -103,6 +108,9 @@ It fast-forwards in about 10 seconds and pauses exactly at Sat 14:00. Talk over 
 > department closes its rapid-assessment zone, because that's the schedule.
 > The AI department keeps it open whenever physicians are free and patients
 > are waiting. Watch the manual backlog build overnight, and never clear."
+
+Point at: the "zone used after hours" counter, which goes from 0 to 7
+by midnight while the manual zone is closed.
 
 ### 4:45–6:15 · The four decisions, scored (paused at Sat 14:00)
 

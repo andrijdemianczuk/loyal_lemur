@@ -174,8 +174,15 @@ table.data th { color: var(--text-secondary); font-weight: 500; }
 .feed-list { list-style: none; margin: 8px 0 0; padding: 0; max-height: 360px; overflow-y: auto; font-size: 12px; }
 .feed-list li { display: flex; gap: 8px; align-items: baseline; padding: 4px 0; border-bottom: 1px solid var(--grid); }
 .feed-time { color: var(--text-muted); font-variant-numeric: tabular-nums; }
-.feed-arm { display: inline-flex; align-items: center; }
-.feed-alert { color: var(--text-primary); font-weight: 600; }
+.dec-counts { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; margin-top: 8px; }
+.dec-count { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; padding: 6px 8px;
+  border: 1px solid var(--border); border-radius: 6px; background: var(--wash); color: var(--text-secondary);
+  font: inherit; font-size: 11px; line-height: 1.25; text-align: left; cursor: pointer; }
+.dec-count b { font-size: 20px; color: var(--text-primary); font-variant-numeric: tabular-nums; }
+.dec-count.active { border-color: var(--series-1); box-shadow: inset 0 0 0 1px var(--series-1); }
+.dec-list li { cursor: pointer; }
+.dec-tag { flex: none; min-width: 44px; padding: 0 5px; border-radius: 4px; font-size: 11px; font-weight: 600;
+  text-align: center; color: var(--series-1); border: 1px solid currentColor; }
 
 .empty-state { max-width: 560px; margin: 80px auto; text-align: center; color: var(--text-secondary); }
 .empty-state h2 { justify-content: center; color: var(--text-primary); margin-bottom: 8px; }

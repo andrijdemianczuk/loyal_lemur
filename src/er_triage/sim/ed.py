@@ -28,6 +28,7 @@ from er_triage.events import EventType
 from er_triage.models import (
     Arm,
     ArrivalMode,
+    AssessmentSource,
     Encounter,
     EncounterStatus,
     Lane,
@@ -45,6 +46,9 @@ from er_triage.sim.triage import TriageDecision, Triager
 
 WAITING = {EncounterStatus.WAITING_TRIAGE, EncounterStatus.WAITING_PHYSICIAN}
 DONE = {EncounterStatus.DISCHARGED, EncounterStatus.ADMITTED, EncounterStatus.LWBS}
+# The four AI-backed decisions, emitted as ``ai.decision`` events when they
+# change what happens to a patient compared with standard practice.
+DECISIONS = ("triage", "queue", "intake", "bed")
 
 Emit = Callable[..., None]
 
@@ -207,6 +211,7 @@ class ArmCounters:
     admit_false_pos: int = 0
     admit_false_neg: int = 0
     boarding_saved_min: float = 0.0
+    decisions: dict[str, int] = field(default_factory=lambda: dict.fromkeys(DECISIONS, 0))
     waits: list[WaitRecord] = field(default_factory=list)
 
 
@@ -259,10 +264,13 @@ class EDArm:
             case "dynamic":
                 return self.config.intake_chairs > 0
             case "scheduled":
-                start, end = self.config.intake_hours
-                return self.config.intake_chairs > 0 and start <= t.hour < end
+                return self.config.intake_chairs > 0 and self._intake_scheduled(t)
             case _:
                 return False
+
+    def _intake_scheduled(self, t: datetime) -> bool:
+        start, end = self.config.intake_hours
+        return start <= t.hour < end
 
     def results_area_occupied(self, t: datetime) -> int:
         return sum(1 for e in self.encounters.values()
@@ -291,6 +299,7 @@ class EDArm:
         """Record a triage decision and (re)place the patient in a lane."""
         first = enc.assigned_ctas is None
         previous = enc.assigned_ctas
+        bed_already_requested = bool(enc.admit_predicted)
         enc.assigned_ctas = decision.ctas
         enc.priority_score = decision.priority_score
         if decision.fast_track is not None:
@@ -316,6 +325,32 @@ class EDArm:
             row.triaged_at = t
         self._record_assessment(s, enc, decision, t, applied=True, previous=previous,
                                 first=first)
+        if decision.source != AssessmentSource.AI:
+            return
+        if decision.rules_ctas is not None and decision.ctas < decision.rules_ctas:
+            self._decision("triage", t, enc, _reason(decision),
+                           ctas=decision.ctas, rules_ctas=decision.rules_ctas)
+        if (decision.admit_predicted and not bed_already_requested
+                and self.config.early_bed_request_min):
+            self._decision("bed", t, enc, _reason(decision),
+                           ctas=decision.ctas)
+
+    def _decision(self, kind: str, t: datetime, enc: ActiveEncounter, reason: str,
+                  **extra: Any) -> None:
+        """Count and emit one AI-backed decision, with its reason."""
+        self.counters.decisions[kind] += 1
+        p = enc.patient
+        self._emit(EventType.AI_DECISION, t, {
+            "decision": kind,
+            "encounter_id": str(enc.encounter_id),
+            "patient_id": str(enc.patient_id),
+            "age": p.age,
+            "sex": p.sex,
+            "complaint": p.presentation.complaint,
+            "arrival_mode": p.arrival_mode,
+            "reason": reason,
+            **extra,
+        }, arm=self.arm)
 
     def _record_assessment(self, s: Session, enc: ActiveEncounter, decision: TriageDecision,
                            t: datetime, *, applied: bool, previous: int | None = None,
@@ -473,8 +508,37 @@ class EDArm:
             if (lane != Lane.MAIN
                     and self.results_area_occupied(t) >= self.config.results_area_capacity):
                 return
+            if (lane == Lane.INTAKE and self.config.intake_mode == "dynamic"
+                    and not self._intake_scheduled(t)):
+                free = sum(1 for f in doctors if f is None or f <= t)
+                waiting = sum(1 for e in queue if e.status == EncounterStatus.WAITING_PHYSICIAN)
+                self._decision("intake", t, enc,
+                               f"{free} physician{'s' * (free != 1)} free, "
+                               f"{waiting} walk-in{'s' * (waiting != 1)} waiting",
+                               physicians_free=free, walk_ins_waiting=waiting)
+            if isinstance(self.policy, SloAwarePolicy):
+                self._log_queue_jump(t, enc, queue)
             self._see(s, enc, lane, t)
             doctors[doc] = t + timedelta(minutes=enc.patient.assess_min)
+
+    def _log_queue_jump(self, t: datetime, enc: ActiveEncounter,
+                        queue: list[ActiveEncounter]) -> None:
+        """Log a patient seen ahead of others that CTAS-then-first-come would
+        have seen first (the SLO-aware queue decision)."""
+        fifo = CtasFifoPolicy()
+        jumped = sum(1 for o in queue if o is not enc
+                     and o.status == EncounterStatus.WAITING_PHYSICIAN
+                     and fifo.key(o, t) < fifo.key(enc, t))
+        if not jumped:
+            return
+        wait = enc.wait_minutes(t)
+        target = effective_target_min(enc.assigned_ctas)
+        if enc.walk_in and wait >= self.policy.slo_guard_min:
+            reason = f"waited {_hm(wait)}, approaching the 4 h walk-in limit"
+        else:
+            reason = f"waited {_hm(wait)} against a {_hm(target)} CTAS {enc.assigned_ctas} target"
+        self._decision("queue", t, enc, reason, ctas=enc.assigned_ctas,
+                       wait_min=round(wait, 1), target_min=target, moved_ahead_of=jumped)
 
     def _see(self, s: Session, enc: ActiveEncounter, lane: Lane, t: datetime) -> None:
         p = enc.patient
@@ -592,6 +656,17 @@ def percentile(values: list[float], pct: float) -> float:
     ordered = sorted(values)
     idx = min(len(ordered) - 1, max(0, round(pct / 100 * len(ordered)) - 1))
     return ordered[idx]
+
+
+def _hm(minutes: float) -> str:
+    h, m = divmod(round(minutes), 60)
+    return f"{h} h {m:02d}" if h else f"{m} min"
+
+
+def _reason(decision: TriageDecision) -> str:
+    if decision.red_flags:
+        return "; ".join(decision.red_flags[:2])
+    return decision.rationale.split(". ")[0][:120]
 
 
 def _draw(enc: ActiveEncounter, salt: str, lo: float, hi: float) -> float:

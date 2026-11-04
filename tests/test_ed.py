@@ -1,4 +1,5 @@
 import dataclasses
+from collections import Counter
 from datetime import UTC, datetime, timedelta
 
 import pytest
@@ -6,8 +7,15 @@ from sqlalchemy import select
 
 from er_triage.db import ping, session_scope
 from er_triage.events import EventBus
-from er_triage.models import Arm, Encounter, EncounterStatus, Lane, SimRun
-from er_triage.sim.ed import EDConfig
+from er_triage.models import (
+    Arm,
+    AssessmentSource,
+    Encounter,
+    EncounterStatus,
+    Lane,
+    SimRun,
+)
+from er_triage.sim.ed import DECISIONS, EDConfig
 from er_triage.sim.feed import FeedEngine
 from er_triage.sim.triage import RulesTriager, vitals_level
 from er_triage.sim.generator import Vitals
@@ -198,5 +206,53 @@ def test_early_bed_request_shortens_boarding_for_true_admissions(db):
         # Only correctly predicted admissions save time, at most 60 min each.
         assert 0 < ai.boarding_saved_min <= 60 * ai.admit_true_pos
         assert base.boarding_saved_min == 0 and base.admit_true_pos == 0  # nurse: no prediction
+    finally:
+        _cleanup(engine)
+
+
+class _DecisionRecorder:
+    def __init__(self) -> None:
+        self.decisions: list[tuple[str, dict]] = []
+
+    def emit(self, event_type, data, *, sim_time, run_id, arm) -> None:
+        if str(event_type) == "ai.decision":
+            self.decisions.append((arm, data))
+
+
+class _ClaudeLike(RulesTriager):
+    """Raises acuity one level above the rules and predicts every admission."""
+
+    def assess(self, patient, vitals, true_ctas, waiting_load):
+        d = super().assess(patient, vitals, true_ctas, waiting_load)
+        d.rules_ctas, d.ctas = d.ctas, max(1, d.ctas - 1)
+        d.source = AssessmentSource.AI
+        d.admit_predicted = True
+        return d
+
+
+def test_ai_decisions_are_counted_and_emitted_for_the_ai_arm_only(db):
+    bus = _DecisionRecorder()
+    engine = FeedEngine(bus, sim_start=START, seed=8, ai_triager=_ClaudeLike())
+    engine.create_run()
+    t = START
+    while t < START + timedelta(hours=24):
+        t += timedelta(minutes=10)
+        engine.step(t)
+    try:
+        ai, base = engine.arms[Arm.AI].counters, engine.arms[Arm.BASELINE].counters
+        assert all(ai.decisions[k] > 0 for k in DECISIONS), ai.decisions
+        assert not any(base.decisions.values())
+        assert {arm for arm, _ in bus.decisions} == {Arm.AI}
+        emitted = Counter(d["decision"] for _, d in bus.decisions)
+        assert emitted == ai.decisions
+        for _, d in bus.decisions:
+            assert d["reason"] and d["complaint"]
+            if d["decision"] == "triage":
+                assert d["ctas"] < d["rules_ctas"]
+            if d["decision"] == "queue":
+                assert d["moved_ahead_of"] > 0
+        # Each patient gets at most one early bed request.
+        beds = [d["encounter_id"] for _, d in bus.decisions if d["decision"] == "bed"]
+        assert len(beds) == len(set(beds))
     finally:
         _cleanup(engine)

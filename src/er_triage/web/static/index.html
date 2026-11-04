@@ -202,7 +202,7 @@
       <template x-if="snap.profile === 'pipeline-pitch'">
         <div class="pipeline">
           <h3>Behind it: the event stream</h3>
-          <p class="muted">Every arrival, vital sign, triage decision and LLM call is a versioned JSON event, sent to a file and an HTTP Event Collector endpoint. Patient events carry (synthetic) PHI, so the pipeline can mask, route and reduce before anything reaches analytics.</p>
+          <p class="muted">Every arrival, vital sign, triage call, AI decision and LLM call is a versioned JSON event, sent to a file and an HTTP Event Collector endpoint. Patient events carry (synthetic) PHI, so the pipeline can mask, route and reduce before anything reaches analytics.</p>
           <div class="kv">
             <span>Events emitted</span><b x-text="snap.telemetry.events_emitted.toLocaleString()"></b>
             <span>Dropped</span><b x-text="snap.telemetry.events_dropped"></b>
@@ -234,16 +234,26 @@
       <p class="muted small">Guardrail: the AI can raise acuity above the vital-sign rules, never lower it. Every decision is logged with its rationale for audit.</p>
     </div>
 
-    <div class="card feed">
-      <h2>Live feed</h2>
-      <ol class="feed-list">
-        <template x-for="e in feedItems()" :key="e.event_id">
-          <li :class="'feed-' + e.kind">
+    <div class="card decisions">
+      <h2>AI decisions</h2>
+      <p class="muted small">Since opening: each time the AI ED acted differently from standard practice, with the reason.</p>
+      <div class="dec-counts" role="group" aria-label="Filter decisions">
+        <template x-for="k in decisionKinds" :key="k.key">
+          <button type="button" class="dec-count" :class="decFilter === k.key && 'active'"
+                  :aria-pressed="decFilter === k.key" @click="decFilter = decFilter === k.key ? null : k.key">
+            <b x-text="snap.arms.ai?.decisions?.[k.key] ?? 0"></b><span x-text="k.label"></span>
+          </button>
+        </template>
+      </div>
+      <ol class="feed-list dec-list">
+        <template x-for="e in decisionItems()" :key="e.event_id">
+          <li class="row" tabindex="0" @click="openDetail(e.data.encounter_id)" @keydown.enter="openDetail(e.data.encounter_id)">
             <span class="feed-time" x-text="(e.sim_time || '').slice(11,16)"></span>
-            <span class="feed-arm" x-show="e.arm"><span class="swatch sm" :style="'background: var(--series-' + (e.arm === 'ai' ? 1 : 2) + ')'"></span></span>
-            <span x-text="e.text"></span>
+            <span class="dec-tag" x-text="e.tag"></span>
+            <span><span x-text="e.text"></span> <span class="muted" x-text="'· ' + e.data.reason"></span></span>
           </li>
         </template>
+        <li class="empty" x-show="!decisionItems().length">No decisions yet</li>
       </ol>
     </div>
   </section>

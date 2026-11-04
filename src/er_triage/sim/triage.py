@@ -67,6 +67,7 @@ class TriageDecision:
     priority_score: float | None = None
     fast_track: bool | None = None  # None = let the queue policy decide
     admit_predicted: bool | None = None  # None = no admission prediction made
+    rules_ctas: int | None = None  # what the vital-sign rules alone would assign
     model: str | None = None
     latency_ms: int | None = None
     input_tokens: int | None = None

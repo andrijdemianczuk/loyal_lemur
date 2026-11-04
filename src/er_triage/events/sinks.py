@@ -118,8 +118,11 @@ class MemorySink:
 
     name = "memory"
 
-    def __init__(self, keep: int = 200, types: set[str] | None = None) -> None:
+    def __init__(self, keep: int = 200, types: set[str] | None = None,
+                 name: str = "memory") -> None:
         from collections import Counter, deque
+
+        self.name = name
 
         self.recent: deque[dict] = deque(maxlen=keep)
         self.counts: Counter[str] = Counter()
