@@ -8,19 +8,24 @@ made to improve wait times?* Every section is organized around four decisions.
 The metrics are the evidence for each one.
 
 > Claims use **12-day averages** (12 simulated days, recorded with Claude;
-> see BUILD_LOG.md, day 2). The live seed is only for what's on screen.
+> see BUILD_LOG.md, days 2 and 3). The live seed is only for what's on screen.
+> "Switched off" figures come from the decision ablation (day 3): the same 12
+> days replayed with one decision at a time reverted to standard practice.
 
 ## The four decisions (presenter's map)
 
-| # | Decision | Manual ED today | AI-assisted ED | Evidence (12-day average, manual → AI) | Where on screen |
+| # | Decision | Manual ED today | AI-assisted ED | Evidence (12-day average) | Where on screen |
 |---|---|---|---|---|---|
-| 1 | **Who is most urgent?** | Nurse triage under pressure | Claude triages, with a rationale; it can raise acuity above the vital-sign rules, never lower it | Under-triaged 24 → 4 a day (−82%). Exact CTAS match 93% vs 75% for the nurse model, and 16/16 subtle cases caught | "Under-triaged" tile; patient drawer |
-| 2 | **Who is seen next?** | By acuity, then first-come | Within the same acuity, walk-ins approaching 4 hours go first | Walk-ins past 4 h: 12 → 0 a day. Left without being seen: 8 → under 1 | "Longest walk-in wait" chart; ⚠ SLO flags in the queues |
-| 3 | **When do we open more capacity?** | Rapid-assessment zone on fixed hours (11:00–21:00) | Opened whenever physicians are free and walk-ins are waiting | In testing (2 days), holding it back whenever an emergent patient was waiting nearly doubled deteriorations and raised the average wait by 50–90% | Capacity line in each queue panel ("intake closed" vs open) |
-| 4 | **Who will need a bed?** | Bed requested only after the physician decides to admit (in one published study, about 5 hours after triage) | Claude predicts admission at triage, so the bed request starts then | Deteriorations while waiting 7.9 → 5.0 a day (−37%). Without this decision: +4% (12-day test with rules triage). Prediction 77% accurate (best possible 81%) | "Likely admission" chip; AI engine panel; "Why it matters" |
+| 1 | **Who is most urgent?** | Nurse triage under pressure | Claude triages, with a rationale; it can raise acuity above the vital-sign rules, never lower it | Under-triaged 24 → 4 a day. Switched off: back to 24, and on the three hardest days average wait rises 18–56 min (no change on a typical day). Exact CTAS match 93% vs 75% for the nurse model; 16/16 subtle cases caught | AI decisions: "triage raised above rules"; "Under-triaged" tile; patient drawer |
+| 2 | **Who is seen next?** | By acuity, then first-come | Patients seen by how far through their CTAS target they are; walk-ins approaching 4 hours go first | Walk-ins past 4 h: 12 → 0 a day. Switched off: average wait 2 min *lower*, but 2 walk-ins a day pass 4 h. A deliberate tradeoff: it protects the tail | AI decisions: "seen out of CTAS order"; "Longest walk-in wait" chart; ⚠ SLO flags |
+| 3 | **When do we open more capacity?** | Rapid-assessment zone on fixed hours (11:00–21:00) | Opened whenever physicians are free and walk-ins are waiting | **Biggest single lever.** Switched off: average wait +17 min (32 → 49), P90 +56 min, 3.7 walk-ins a day past 4 h, +2.7 deteriorations a day. Worse on 11 of 12 days | AI decisions: "zone used after hours"; capacity line ("intake closed" vs open) |
+| 4 | **Who will need a bed?** | Bed requested only after the physician decides to admit (in one published study, about 5 hours after triage) | Claude predicts admission at triage, so the bed request starts then | Frees about 22 h of bed time a day. Switched off: average wait +6 min, +1.2 deteriorations a day. Prediction 77% accurate (best possible 81%) | AI decisions: "beds requested at triage"; "Likely admission" chip |
 
-**The thesis:** decisions 1–3 decide *who* waits. Decision 4 frees the beds,
-and that's what reduces harm.
+**The thesis:** each decision earns its place differently. The zone shortens
+waits and reduces harm, triage prevents misses, the queue protects the tail,
+and bed requests add to all of it. Together they're worth more than the sum of
+their parts: switch all four off and the AI department falls back to the
+manual one.
 
 ---
 
@@ -89,7 +94,7 @@ four decisions. Click any line to open that patient. Counts on seed 8 at 20:00:
 |---|---|---|---|
 | ~15:11 | **1 · Who is most urgent?** | AI decisions: "Triage · Raised to CTAS 2 (rules: 4): 76F epigastric pain". **Click it** | "The vital-sign rules say CTAS 4: she can wait an hour. Claude reads the whole picture: 76, diabetic, epigastric pain and fatigue. That's a possible heart attack, so CTAS 2. Here's its rationale and what the nurse should do now. It can raise acuity above the rules but never lower it." Close the drawer. |
 | 16:00–17:00 | **1** | "Under-triaged" tile (about 0 vs 6 by 17:00) | "Under pressure, a nurse under-triages about 1 patient in 5. Claude does it about 1 in 100. Those are the patients who end up waiting too long for how sick they are." |
-| ~16:03 | **4 · Who will need a bed?** | AI decisions: "Bed · Bed requested at triage: 76M hip injury - fall" (suspected hip fracture). **Click it** | Show the "Likely admission · bed requested at triage" chip. "Claude also predicts who'll be admitted, so the bed request starts now instead of hours from now. Hold that thought: it turns out to be the decision that matters most." |
+| ~16:03 | **4 · Who will need a bed?** | AI decisions: "Bed · Bed requested at triage: 76M hip injury - fall" (suspected hip fracture). **Click it** | Show the "Likely admission · bed requested at triage" chip. "Claude also predicts who'll be admitted, so the bed request starts now instead of hours from now. On its own that's worth about 6 minutes of average wait and one fewer patient deteriorating a day." |
 | 18:00–19:50 | **2 · Who is seen next?** | AI decisions, "Queue" lines, e.g. 18:57 "Seen ahead of 6: 35M sore throat · waited 3 h 04, approaching the 4 h walk-in limit"; ⚠ SLO flags in the manual queue | "Evening rush. In the manual ED it's acuity, then first-come, so a walk-in with a minor problem can wait indefinitely. The AI ED sees walk-ins approaching four hours first, before they get there. Every one of those is logged with its reason." |
 | ~19:50 | **2** | "Longest walk-in wait" chart: the manual line crosses 4 h (about 245 vs 86 min) | Press **Pause**. "There: a walk-in past four hours in the manual ED. The AI ED's longest wait is under an hour and a half." |
 
@@ -128,36 +133,62 @@ Point at the tiles while you score each decision with the 12-day averages:
 > - **Who is most urgent:** under-triaged patients fall from 24 a day to 4.
 > - **Who is seen next:** walk-ins past four hours fall from 12 a day to none,
 >   and people leaving without being seen from 8 a day to fewer than 1.
-> - **When to open capacity:** in testing, holding the rapid-assessment zone
->   back nearly doubled deteriorations. Opening it whenever physicians are
->   free is one of the biggest levers we found.
-> - **Who will need a bed:** deteriorations while waiting fall by about a third.
+> - **When to open capacity:** keeping the rapid-assessment zone open whenever
+>   physicians are free is the biggest single lever. On fixed hours, the
+>   average wait rises by 17 minutes and nearly 3 more patients a day
+>   deteriorate while waiting.
+> - **Who will need a bed:** requesting beds at triage frees about 22 hours of
+>   bed time a day. Overall, deteriorations while waiting fall by about a third.
 >
 > Together, average wait to physician drops from 68 to 32 minutes, and the
 > 90th percentile from about 3 hours to 74 minutes. On the quietest days it
 > makes no difference, because there's nothing to decide. The gains come under
 > pressure."
 
-### 6:15–8:00 · Which decision matters most (the credibility moment)
+### 6:15–8:00 · What each decision is worth (the credibility moment)
 
-> "Here's what surprised us. With only the first three decisions, the AI
-> department was faster, but it had **more** patients deteriorating while
-> waiting than the manual one.
+Show the slide (12-day averages; each row switches one decision back to
+standard practice, change against all four on):
+
+| | Avg wait | P90 wait | Walk-ins past 4 h | Deteriorated | Under-triaged |
+|---|---|---|---|---|---|
+| Manual ED | 68 min | 177 min | 12.1 | 7.9 | 24.2 |
+| **AI ED, all four decisions** | **32 min** | **74 min** | **0** | **5.0** | **4.4** |
+| without AI triage | +7 | +16 | +0.2 | +1.1 | **+19** |
+| without the SLO-aware queue | −2 | +2 | **+2.0** | 0 | 0 |
+| without the dynamic zone | **+17** | **+56** | **+3.7** | **+2.7** | 0 |
+| without early bed requests | +6 | +13 | +0.2 | +1.2 | 0 |
+| all four off | +41 | +96 | +14 | +5.8 | +19 |
+
+> "We switched off each decision in turn and replayed the same 12 days. Each
+> one earns its place, and each in a different way.
 >
-> We tried to fix it with smarter versions of decision 2: ordering the queue
-> by vital signs, by risk, even by each patient's *true* risk, which no real
-> system could know. Nothing helped. Who goes first can't fix the real
-> constraint, which was that half the beds were held by admitted patients
-> waiting for an inpatient bed.
+> - **The capacity decision is the biggest lever.** Opening the
+>   rapid-assessment zone whenever physicians are free is worth 17 minutes of
+>   average wait and almost 3 fewer deteriorations a day. It's worse without
+>   it on 11 of the 12 days.
+> - **Triage is a safety decision, not a speed decision.** On a typical day,
+>   switching Claude off doesn't change the average wait. What changes is
+>   that 19 more patients a day are under-triaged, and on the hardest days
+>   waits climb by up to an hour.
+> - **The queue decision is a deliberate tradeoff.** It costs 2 minutes of
+>   average wait and buys zero walk-ins past four hours.
+> - **Bed requests** add 6 minutes and one fewer deterioration a day.
 >
-> Decision 4 fixed it. Predicting admission at triage starts the bed request
-> hours earlier. Claude is 77% accurate there, against a best possible 81% for
-> this data. Across 12 days, deteriorations fell by about a third. On 3 of the
-> 12 days the AI department still had slightly more, which is what a real
-> distribution looks like.
+> And they back each other up: individually they add up to about 27 minutes;
+> switch all four off and you lose 41, which puts you back at the manual
+> department.
 >
-> So the answer to *which decisions need AI* is: **triage and queueing decide
-> who waits. Predicting beds is what reduces harm.**"
+> We also tested ideas that didn't work: ordering the queue by vital signs,
+> by risk, even by each patient's *true* risk, which no real system could
+> know. None of them reduced deteriorations. The order patients are seen in
+> can't fix the real constraint, which is beds and capacity.
+>
+> So, *which decisions need AI?* Two need a model reading the patient:
+> triage and admission prediction. That's where Claude reads the history the
+> rules miss. Two need the live state of the department: the queue and the
+> zone. They run on that triage output, and that's where most of the minutes
+> come from."
 
 ### 8:00–10:00 · Close and questions
 
@@ -182,11 +213,16 @@ fast and at what cost."
 ## Q&A appendix
 
 **Which of the four decisions matters most?**
-We didn't isolate every decision, but here's what we measured:
-- **Decision 3 (opening capacity):** holding the zone back raised the average wait by 50–90% on the days we tested.
-- **Decision 4 (beds):** cut the average wait by about a quarter on its own (47 → 36 min over 12 days, in a test with rules triage and ideal prediction) and is the only one that reduced deteriorations.
-- **Decision 2 (who's next):** this is what eliminates 4-hour breaches.
-- **Decision 1 (triage):** this makes the others safe, because you can't prioritize well on the wrong acuity.
+We measured it by replaying the same 12 days with each decision switched off
+in turn (the slide above):
+- **Decision 3 (opening capacity)** is the biggest single lever: +17 min average wait and +2.7 deteriorations a day without it, worse on 11 of 12 days.
+- **Decision 1 (triage)** is the safety decision: under-triage goes from 4 to 24 a day without it. Its effect on waits is concentrated on the hardest days.
+- **Decision 2 (who's next)** trades 2 minutes of average wait for zero 4-hour breaches.
+- **Decision 4 (beds)**: +6 min and +1.2 deteriorations a day without it.
+
+Caveats: these are one-at-a-time removals, and the decisions interact (all
+four off costs more than the sum). Without triage, Claude's fast-track
+streaming is also off, because it comes with the triage call.
 
 **Is the AI making these decisions on its own?**
 No. It's decision support. The nurse confirms every triage call; the queue,

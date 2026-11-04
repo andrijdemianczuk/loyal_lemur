@@ -32,6 +32,7 @@ them against the SLI/SLO:
 | 6 | Demo polish: warm start, scenarios, scripts, push | In progress |
 | 6a | Deterioration investigation; early bed requests | Done |
 | 6b | 12-day validation, literature check, demo script, dry run | Done |
+| 6c | AI decisions panel; decision ablation; script rework | Done |
 | 7 | Event-pipeline integration (optional) | Not started |
 
 ---
@@ -452,6 +453,103 @@ Costs are at the list prices in our price table.
 
 ---
 
+## Day 3 — 2026-11-04
+
+### AI decisions panel (`c43578b`)
+
+**Why:** the dashboard showed outcomes, but the point of the demo is the
+*decisions*. Decision 3 was only an "open/closed" word on the capacity line,
+and decision 2 only showed indirectly in the walk-in chart.
+
+**What:** a new `ai.decision` event, emitted by the AI ED each time it acts
+differently from standard practice, with the patient and the reason:
+
+| Decision | Logged when | Example (seed 8) |
+|---|---|---|
+| `triage` | Claude assigns higher acuity than the vital-sign rules | "Raised to CTAS 2 (rules: 4): 76F epigastric pain · older diabetic woman, possible atypical ACS" |
+| `queue` | A patient is seen ahead of someone that CTAS-then-first-come would have seen first | "Seen ahead of 6: 35M sore throat · waited 3 h 04, approaching the 4 h walk-in limit" |
+| `intake` | The rapid-assessment zone is used outside the manual schedule (11:00–21:00) | "Rapid-assessment zone kept open: 31F earache · 3 physicians free, 4 walk-ins waiting" |
+| `bed` | Claude predicts admission at triage (once per patient) | "Bed requested at triage: 76M hip injury · suspected L hip fracture" |
+
+- The panel replaces the Live feed: four counters (one per decision, since opening) that also act as filters, and a list of the latest decisions. Click a line to open the patient.
+- `TriageDecision` now carries `rules_ctas`, so "raised above the rules" is measured, not inferred.
+- **Emit-only.** Replaying seed 8 gives exactly the recorded result (28.9 vs 67.5 min, 0 cache misses).
+- **Decision:** the queue decision was first logged only when the 3-hour walk-in guard fired. That happened twice a day: the SLO-aware ordering rarely lets walk-ins get that close. The ordering itself is the decision, so it's now logged whenever someone is seen out of CTAS-then-first-come order.
+- **Decision:** the intake zone is logged only when its use differs from the manual schedule. That makes it a night-time decision: it shows during the skip, not during the 14:00–20:00 live segment.
+- Per demo day (seed 8): 53 beds requested, 25 triage upgrades, 12 seen out of order, 10 after-hours zone uses. That's about 4 per simulated hour, readable at 2×.
+- The script's live segment now points at specific panel lines (15:11 triage upgrade, 16:03 bed request, 18:57 queue move), and at the zone counter during the skip.
+- New test: all four decisions fire for the AI arm, none for the manual arm, and events match counters. 29 tests passing.
+
+### Decision ablation: what each decision is worth
+
+**Method:** the 12 recorded normal days, replayed offline with one decision at
+a time reverted to standard practice. Each change applies from the start of the
+30-hour warm-up, so every variant reaches its own steady state. 72 runs, about a
+minute in total, 0 cache misses, no API cost.
+
+- **without triage:** rules CTAS instead of Claude's. Claude still predicts admissions, but its fast-track streaming hint is dropped, because it comes with the triage call.
+- **without queue:** CTAS-then-first-come ordering and lanes.
+- **without zone:** the rapid-assessment zone runs on the manual schedule.
+- **without beds:** no early bed requests.
+- **all four off:** standard practice with rules triage.
+
+**Results** (mean per day; change against all four on):
+
+| | Avg wait | P90 wait | Walk-ins past 4 h | Deteriorated | Walk-outs | Under-triaged |
+|---|---|---|---|---|---|---|
+| Manual ED | 68.4 | 176.8 | 12.1 | 7.9 | 8.4 | 24.2 |
+| **AI, all four on** | **32.0** | **74.2** | **0.0** | **5.0** | **0.6** | **4.4** |
+| without triage | +7.0 | +16.3 | +0.2 | +1.1 | +0.8 | +19.3 |
+| without queue | −2.2 | +1.7 | +2.0 | −0.1 | +0.7 | 0 |
+| without zone | +16.9 | +55.6 | +3.7 | +2.7 | +1.5 | 0 |
+| without beds | +5.6 | +13.4 | +0.2 | +1.2 | +0.2 | 0 |
+| all four off | +41.4 | +95.9 | +14.2 | +5.8 | +9.1 | +19.3 |
+
+How consistent each effect is (days worse / better without the decision, of 12):
+
+| Without | Avg wait | P90 wait | Deteriorations |
+|---|---|---|---|
+| triage | 4 / 8 (median −1.8 min) | 4 / 8 | 3 / 5 |
+| queue | 4 / 8 | 3 / 8 | 2 / 4 |
+| zone | 11 / 1 (median +10.8) | 11 / 0 | 7 / 0 |
+| beds | 8 / 4 (median +4.4) | 8 / 4 | 6 / 1 |
+
+**What it means:**
+1. **The dynamic zone is the biggest single lever** on every outcome, and the most consistent.
+2. **Triage is a safety decision, not a speed decision.** On a typical day it doesn't change the average wait. Its value is under-triage (4 vs 24 a day) and protecting the hardest days: seeds 3, 4 and 7 lose 18–56 min of average wait without it.
+3. **The queue is a deliberate tradeoff:** about 2 minutes of average wait for zero 4-hour breaches.
+4. **Early bed requests** are solid but second: +5.6 min and +1.2 deteriorations a day without them.
+5. **The decisions back each other up.** Single removals add up to about 27 min of average wait; switching all four off costs 41. With all four off, the AI ED is roughly back to the manual ED (73.5 vs 68.4 min), which is a sanity check: the gap comes from the four decisions, not the model setup.
+
+**Correction to day 2.** On day 2 we said that with only the first three
+decisions, the AI ED had *more* deteriorations than manual, and that bed
+requests were the decision that reduces harm. That came from 2 seeds and a
+rules-triage test. Across 12 Claude days without bed requests, the AI ED has
+6.2 deteriorations a day vs 7.9 for manual, and is worse on only 2 days. The
+zone matters more for harm than bed requests (+2.7 vs +1.2 a day).
+
+**Script rework:** the presenter's map, the thesis, the scoring section, the
+6:15–8:00 segment (now "What each decision is worth", with the table as a
+slide) and the "which decision matters most?" Q&A now use the ablation
+numbers. The day-2 "bed requests matter most" line is gone.
+
+Ablation script (gitignored): `var/analysis/ablation.py`. Raw results are in
+`var/analysis/ablation.json`; re-print the summary with `--summarize`.
+
+### State
+
+- 29 tests passing. Commits through `c43578b` plus this update are local, not pushed.
+- API spend today: $0 (all replay). Running total still about $3.70.
+
+**Next:**
+1. Timed in-person run-through of the script at the target screen resolution. Check whether the AI decisions panel (bottom right) is visible without scrolling during the live segment.
+2. Build the "what each decision is worth" slide from the table.
+3. README refresh: how to run, record and replay, and the headline results.
+4. Scenario presets with time-limited surges, if there's time.
+5. Push to GitHub.
+
+---
+
 ## Lessons learned (running list)
 
 Things we would tell someone building a similar system. Each one cost us
@@ -466,7 +564,9 @@ something to learn.
 2. **Find the binding constraint before you optimize.** We tried five
    queue-ordering ideas against deteriorations. None worked, not even
    ordering by each patient's *true* risk. The constraint was main beds
-   blocked by boarders, and no ordering can create a bed. (Day 2)
+   blocked by boarders, and no ordering can create a bed. (Day 2) The day-3
+   ablation refined this: physician capacity (the dynamic zone) turned out to
+   matter even more than beds. The constraint is capacity, not order. (Day 3)
 3. **Over-triage has a cost.** Claude's caution was clinically defensible
    (anticoagulated head injuries at CTAS 2). It still doubled the CTAS 2
    queue and slowed the truly emergent patients. "Err on the side of
@@ -527,6 +627,15 @@ something to learn.
     screen wasn't. At 20:00 the dashboard showed the opposite of what the
     script said. The dry run also found that fast-forwarding broke replay
     fidelity, which no test covered. (Day 2)
+18. **Re-measure a story when the system changes.** "Bed requests are what
+    reduce harm" came from 2 seeds and an older configuration. The 12-day
+    ablation with Claude reversed it, and the script was built on it. The
+    cheapest time to find that out is before presenting. (Day 3)
+19. **Ablate one at a time, and all at once.** Single removals show what each
+    decision is worth; switching all off shows the decisions back each
+    other up (27 min vs 41 min), and that all-off lands back on the manual
+    baseline, which validates the setup. Report how many days each effect
+    holds on, not only the mean: triage's +7 min mean is a median of −2. (Day 3)
 
 ---
 
@@ -541,8 +650,9 @@ something to learn.
 - [x] **Choose demo seeds:** 8 (backup 4), from 12 recorded days (day 2).
 - [x] **Check the 60-minute boarding assumption:** it's conservative against the published simulations (day 2).
 - [x] **Dry run of the delivery script** (day 2): found 5 issues, all fixed.
-- [ ] **"AI decisions" panel:** make all four decisions visible as they happen, with reasons, and emit them as events (next session).
-- [ ] **Decision ablation:** what each decision contributes, over 12 days, replayed at no API cost (next session).
+- [x] **"AI decisions" panel** (day 3): all four decisions visible as they happen, with reasons, and emitted as `ai.decision` events.
+- [x] **Decision ablation** (day 3): what each decision contributes, over 12 days, replayed at no API cost.
+- [ ] **"What each decision is worth" slide** from the ablation table.
 - [ ] **Rehearse the script** in person end to end, timed, at the target screen resolution.
 - [ ] **Optional realism:** make walk-outs more likely after very long overnight waits.
 - [ ] **Optional realism:** give false-positive bed requests a cost (idle inpatient bed time).
