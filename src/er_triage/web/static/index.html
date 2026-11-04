@@ -41,10 +41,11 @@
     </select>
   </label>
   <label>Arrivals
-    <select x-model.number="form.surge">
-      <option value="1">Normal day</option>
-      <option value="1.25">Busy (1.25&times;)</option>
-      <option value="1.5">Surge (1.5&times;)</option>
+    <select x-model="form.preset">
+      <option value="normal">Normal day</option>
+      <option value="evening-rush">Evening rush</option>
+      <option value="mvc">Collision (8 patients)</option>
+      <option value="flu-wave">Respiratory wave</option>
     </select>
   </label>
   <label>AI triage
@@ -78,6 +79,7 @@
     <span class="key"><span class="swatch" style="background: var(--series-1)"></span>AI-assisted ED</span>
     <span class="key"><span class="swatch" style="background: var(--series-2)"></span>Manual triage ED</span>
     <span class="warm-note" x-show="snap.run?.warmup" x-text="warmupText()"></span>
+    <span class="warm-note" x-show="snap.run?.surge?.patients" x-text="surgeText()"></span>
   </div>
 
   <!-- KPI comparison tiles -->

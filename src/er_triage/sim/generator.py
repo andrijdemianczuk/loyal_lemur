@@ -78,8 +78,10 @@ def poisson(rng: random.Random, lam: float) -> int:
 
 class PatientGenerator:
     def __init__(self, seed: int | None = None, daily_volume: float = 150.0,
-                 boarding_min: tuple[float, float] = (240, 600)) -> None:
+                 boarding_min: tuple[float, float] = (240, 600),
+                 mrn_prefix: str = "M") -> None:
         self.boarding_min = boarding_min
+        self.mrn_prefix = mrn_prefix
         self.rng = random.Random(seed)
         self.faker = Faker("en_CA")
         self.faker.seed_instance(seed)
@@ -166,8 +168,12 @@ class PatientGenerator:
             gcs=v.gcs - rng.randint(0, 2),
         ))
 
-    def new_patient(self, arrived_at: datetime) -> NewPatient:
-        p = self._pick_presentation()
+    def new_patient(self, arrived_at: datetime, *, presentation: Presentation | None = None,
+                    ambulance: bool | None = None,
+                    notes: tuple[str, ...] | None = None) -> NewPatient:
+        """A new patient. The keyword overrides are for surge scenarios; without
+        them the random draws are exactly those of a normal day."""
+        p = presentation or self._pick_presentation()
         rng, fk = self.rng, self.faker
 
         sex = p.sex or rng.choice("MF")
@@ -178,14 +184,15 @@ class PatientGenerator:
 
         pmh, meds = rng.choice(p.history)
         history = f"PMHx: {pmh}. Meds: {meds}."
-        note = rng.choice(p.notes).format(age=age, sex=sex)
-        ambulance = rng.random() < p.ambulance_prob
+        note = rng.choice(notes or p.notes).format(age=age, sex=sex)
+        drawn = rng.random() < p.ambulance_prob
+        ambulance = drawn if ambulance is None else ambulance
         walk_in = not ambulance
         admitted = rng.random() < p.admit_prob
 
         return NewPatient(
             presentation=p,
-            mrn=f"M{self._mrn_seq:07d}",
+            mrn=f"{self.mrn_prefix}{self._mrn_seq:07d}",
             health_card_no=f"{rng.randint(10000, 99999)}-{rng.randint(1000, 9999)}",
             first_name=first,
             last_name=fk.last_name(),

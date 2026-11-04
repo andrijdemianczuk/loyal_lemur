@@ -27,7 +27,7 @@ function cssVar(name) {
 function app() {
   return {
     snap: { run: null, arms: {}, series: [], events: [], telemetry: { sinks: {}, event_counts: {} } },
-    form: { seed: 3, startHour: "14", surge: 1, ai_mode: "replay", volume: 150, warm: true },
+    form: { seed: 3, startHour: "14", preset: "normal", ai_mode: "replay", volume: 150, warm: true },
     speeds: [0.5, 1, 2, 5, 10, 20, 30, 45, 60],
     speedIdx: 2,
     kpis: KPIS,
@@ -89,7 +89,7 @@ function app() {
         await this.post("/api/run", {
           seed: this.form.seed,
           speed: this.speeds[this.speedIdx],
-          surge: Number(this.form.surge),
+          preset: this.form.preset,
           volume: this.form.volume,
           ai_mode: this.form.ai_mode,
           start: `2026-11-06T${hh}:00:00-07:00`,
@@ -105,7 +105,7 @@ function app() {
       const p = this.snap.params;
       if (!p) return;
       this.form.seed = p.seed;
-      this.form.surge = p.surge;
+      this.form.preset = p.preset || "normal";
       this.form.ai_mode = p.ai_mode;
       // String, to match the <option> values the select compares against.
       this.form.startHour = String(Number(p.start.slice(11, 13)));
@@ -278,6 +278,24 @@ function app() {
         `<b>${Math.round(p.value)} min</b> <span style="opacity:.7">${p.seriesName}</span></div>`);
       return `<div style="font-size:11px;opacity:.7">${params[0].axisValue}</div>` + rows.join("");
     },
+    surgeText() {
+      const s = this.snap.run?.surge;
+      return s ? `Surge: ${s.label} · ${s.patients} extra patients, same in both EDs` : "";
+    },
+    surgeArea(times) {
+      // Shade the surge window on the time charts (neutral wash, labelled).
+      const s = this.snap.run?.surge;
+      if (!s?.patients || !times.length) return null;
+      const from = s.start.slice(11, 16), to = s.end.slice(11, 16);
+      if (!times.includes(from)) return null;
+      const name = s.label.split(" (")[0];
+      return {
+        silent: true,
+        itemStyle: { color: cssVar("--wash") },
+        label: { show: true, position: "insideTop", formatter: name, color: cssVar("--text-muted"), fontSize: 11 },
+        data: [[{ xAxis: from }, { xAxis: times.includes(to) ? to : times.at(-1) }]],
+      };
+    },
     updateCharts() {
       if (!this.snap.run) return;
       this.initCharts();
@@ -292,10 +310,13 @@ function app() {
       const base = this.baseOptions();
       const tip = { ...base.tooltip, formatter: (p) => this.tooltipMinutes(p) };
 
+      const surge = this.surgeArea(times);
+      const waitSeries = this.lineSeries("avg_wait");
+      if (surge) waitSeries[1].markArea = surge;
       CHARTS.wait.setOption({
         ...base, tooltip: tip,
         xAxis: { ...base.xAxis, data: times },
-        series: this.lineSeries("avg_wait"),
+        series: waitSeries,
       }, true);
 
       const sloSeries = this.lineSeries("max_walk_in_wait");
@@ -306,6 +327,7 @@ function app() {
         label: { formatter: "4 h SLO", color: cssVar("--text-secondary"), position: "insideEndTop", fontSize: 11 },
         data: [{ yAxis: 240 }],
       };
+      if (surge) sloSeries[1].markArea = surge;
       CHARTS.slo.setOption({
         ...base, tooltip: tip,
         xAxis: { ...base.xAxis, data: times },

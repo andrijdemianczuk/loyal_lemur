@@ -28,6 +28,8 @@ def main() -> None:
                      help="simulated start time (ISO 8601)")
     sim.add_argument("--volume", type=float, default=150, help="arrivals per day")
     sim.add_argument("--surge", type=float, default=1.0, help="arrival rate multiplier")
+    sim.add_argument("--preset", choices=["evening-rush", "mvc", "flu-wave"],
+                     help="time-limited surge on the opening day (see sim/surge.py)")
     sim.add_argument("--ai", choices=["claude", "rules"], help="AI arm triager")
     sim.add_argument("--offline", action="store_true",
                      help="replay cached Claude responses only (rules on cache miss)")
@@ -66,20 +68,24 @@ async def _simulate(args: argparse.Namespace) -> None:
     from er_triage.models import Arm, EncounterStatus
     from er_triage.sim.ed import WAITING
     from er_triage.sim.feed import FeedEngine
+    from er_triage.sim.surge import PRESETS
 
     settings = get_settings()
     bus = build_bus(settings)
     bus.start()
     ai_triager = build_ai_triager(settings, args.ai, offline=args.offline,
                                   blocking=not args.live)
+    opens_at = datetime.fromisoformat(args.start)
     engine = FeedEngine(
         bus,
-        sim_start=datetime.fromisoformat(args.start) - timedelta(hours=args.warmup),
+        sim_start=opens_at - timedelta(hours=args.warmup),
         speed=args.speed or settings.sim_speed,
         seed=args.seed,
         daily_volume=args.volume,
         arrival_multiplier=args.surge,
         ai_triager=ai_triager,
+        surge=PRESETS[args.preset] if args.preset else None,
+        opens_at=opens_at,
     )
     if args.warmup:
         w = engine.warm_up(args.warmup, cache_only=args.offline)

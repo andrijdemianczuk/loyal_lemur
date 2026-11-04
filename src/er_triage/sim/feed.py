@@ -32,6 +32,7 @@ from er_triage.sim.ed import (
     SloAwarePolicy,
 )
 from er_triage.sim.generator import NewPatient, PatientGenerator, Vitals
+from er_triage.sim.surge import SurgePreset, SurgeSchedule
 from er_triage.sim.triage import NurseTriager, RulesTriager, Triager
 
 log = logging.getLogger(__name__)
@@ -58,10 +59,15 @@ class FeedEngine:
         ed_config: EDConfig | None = None,
         ai_ed_config: EDConfig | None = None,
         ai_triager: Triager | None = None,
+        surge: SurgePreset | None = None,
+        opens_at: datetime | None = None,
     ) -> None:
         self.bus = bus
         self.clock = SimClock(sim_start, speed)
         self.generator = PatientGenerator(seed, daily_volume, boarding_min)
+        # Time-limited surge on the opening day, from its own random stream.
+        self.surge = (SurgeSchedule(surge, opens_at or sim_start, seed, self.generator)
+                      if surge else None)
         self.seed = seed
         self.scenario = scenario
         self.arrival_multiplier = arrival_multiplier
@@ -99,6 +105,9 @@ class FeedEngine:
         config = {
             "daily_volume": self.generator.daily_volume,
             "arrival_multiplier": self.arrival_multiplier,
+            "surge": self.surge and {
+                "preset": self.surge.preset.key, "planned_arrivals": self.surge.planned,
+                "window": [t.isoformat() for t in self.surge.window]},
             "tick_seconds": self.tick_seconds,
             "ed": {arm.value: a.config.__dict__ for arm, a in self.arms.items()},
             "policies": {arm.value: a.policy.name for arm, a in self.arms.items()},
@@ -225,6 +234,9 @@ class FeedEngine:
     def _substep(self, s: Session, start: datetime, t: datetime) -> None:
         for arrived_at in self.generator.sample_arrival_times(start, t, self.arrival_multiplier):
             self._admit(s, self.generator.new_patient(arrived_at))
+        if self.surge is not None:
+            for patient in self.surge.arrivals(start, t):
+                self._admit(s, patient)
         for arm in self.arms.values():
             arm.step(s, t)
         dt_hours = (t - start).total_seconds() / 3600

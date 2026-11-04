@@ -225,6 +225,17 @@ Caveats: these are one-at-a-time removals, and the decisions interact (all
 four off costs more than the sum). Without triage, Claude's fast-track
 streaming is also off, because it comes with the triage call.
 
+**What happens under a surge?**
+We recorded three surge presets on the same 12 days: an evening rush (12 extra
+walk-ins, 17:00–21:00), a multi-vehicle collision (8 ambulance patients at
+18:30) and a respiratory wave (12 extra patients, 12:00–24:00). The manual
+department's average wait rises to about 100 minutes in each; the AI
+department's to about 50. The relative gains hold (−47 to −52% average wait,
+−40 to −51% deteriorations), and the AI department is worse than manual on
+almost no day. Under the evening rush it starts to miss the 4-hour target too
+(about 2 walk-ins a day, against 22). To show it live, choose **Arrivals →
+Evening rush** with seed 8; the surge is shaded on the charts.
+
 **Is the AI making these decisions on its own?**
 No. It's decision support. The nurse confirms every triage call; the queue,
 the rapid-assessment zone and the bed requests are recommendations a charge

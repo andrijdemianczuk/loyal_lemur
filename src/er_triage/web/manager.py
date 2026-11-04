@@ -16,6 +16,7 @@ from er_triage.models import Arm, EncounterStatus, Lane
 from er_triage.sim.catalog import WALK_IN_SLO_MIN, effective_target_min
 from er_triage.sim.ed import WAITING, ActiveEncounter, EDArm, percentile
 from er_triage.sim.feed import FeedEngine
+from er_triage.sim.surge import PRESETS
 
 SERIES_EVERY = timedelta(minutes=5)
 FEED_TYPES = {
@@ -32,7 +33,8 @@ PRICES = {"claude-haiku-5-5": (0.10, 0.50), "claude-sonnet-5-5": (2.00, 10.00)}
 class RunParams:
     seed: int = 3
     speed: float = 2.0
-    surge: float = 1.0
+    surge: float = 1.0  # whole-day arrival multiplier (API/CLI experiments)
+    preset: str = "normal"  # time-limited surge preset, see sim/surge.py
     volume: float = 150.0
     ai_mode: str = "replay"  # claude | replay | rules
     start: str = "2026-11-06T14:00:00-07:00"  # when the live run opens
@@ -83,6 +85,8 @@ class SimulationManager:
                 daily_volume=params.volume,
                 arrival_multiplier=params.surge,
                 ai_triager=triager,
+                surge=PRESETS.get(params.preset),
+                opens_at=opens_at,
                 scenario=f"ui:{params.ai_mode}",
             )
             self.engine = None
@@ -211,6 +215,12 @@ class SimulationManager:
                 "running": engine._task is not None and not engine._task.done(),
                 "warmup": engine.warmup,
                 "skipping": self.skip_until is not None,
+                "surge": engine.surge and {
+                    "key": engine.surge.preset.key, "label": engine.surge.preset.label,
+                    "start": engine.surge.window[0].isoformat(),
+                    "end": engine.surge.window[1].isoformat(),
+                    "patients": engine.surge.planned,
+                },
             },
             "arms": arms,
             "series": self.series,

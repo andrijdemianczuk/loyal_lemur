@@ -32,7 +32,7 @@ them against the SLI/SLO:
 | 6 | Demo polish: warm start, scenarios, scripts, push | In progress |
 | 6a | Deterioration investigation; early bed requests | Done |
 | 6b | 12-day validation, literature check, demo script, dry run | Done |
-| 6c | AI decisions panel; decision ablation; script rework | Done |
+| 6c | AI decisions panel; decision ablation; script rework; slide; README; surge presets | Done |
 | 7 | Event-pipeline integration (optional) | Not started |
 
 ---
@@ -536,17 +536,66 @@ numbers. The day-2 "bed requests matter most" line is gone.
 Ablation script (gitignored): `var/analysis/ablation.py`. Raw results are in
 `var/analysis/ablation.json`; re-print the summary with `--summarize`.
 
+### Slide, README, push (`00788fd`, `a5bc568`)
+
+- `docs/slides/decision-worth.html`: a self-contained 16:9 slide of the ablation (light and dark), linked from the script's 6:15–8:00 segment.
+- README rewritten around the four decisions, with the 12-day results, the ablation, how to run the demo, and how recording and replay work. Stale resource numbers were corrected.
+- Pushed to GitHub through `a5bc568`.
+- An offline replay of `eval-triage` has 1 cache miss (one escalation response was never stored), so it shows 92% exact / 76% admission accuracy against the recorded 93% / 77%. The docs keep the recorded figures.
+
+### Surge presets
+
+**Why:** the only surge was a whole-day 1.5× multiplier, which overwhelms
+both EDs, and it drew patients from the same random stream as the normal day,
+so a surge day was a different day altogether.
+
+**Design:**
+- Surge patients come from their own random stream (MRNs prefixed `S`), layered on top of an unchanged normal day. A test proves the normal day's patients are identical with and without a surge.
+- The normal day's recorded triage calls still apply: only the surge patients needed recording (467 live calls for 3 presets × 12 days, about $0.20).
+- Windows are clock times on the opening day, clipped to the opening time, so they never overlap the warm-up.
+- Poisson-rate presets use a fixed count (the expected number), and only the times are random. Before this, the evening rush varied from 17 to 38 extra patients by seed.
+- The UI's Arrivals menu now offers Normal day and the three presets; the whole-day 1.25×/1.5× options were removed (the `--surge` CLI flag remains). The surge window is shaded on the time charts, and a note gives the preset and patient count.
+
+**Sizing (user decision):** the ED runs near capacity, so it's very
+sensitive. In the manual ED (exact without recording, because it never uses
+Claude), +8 patients raised the average wait about 35%; +17 nearly doubled it
+and more than doubled deteriorations; +25 gave 151 min. We chose a moderate
+size so the ED is clearly stressed but not collapsed:
+
+| Preset | What | Extra patients |
+|---|---|---|
+| Evening rush | +35% arrivals, 17:00–21:00, normal mix | 12 |
+| Multi-vehicle collision | Fixed casualty list at 18:30, all by ambulance: 2 major trauma, anticoagulated head injury, 2 neck/back, 2 lacerations, ankle; collision-specific triage notes | 8 |
+| Respiratory wave | +15% arrivals, 12:00–24:00, weighted to URTI, fever, sore throat, SOB, vomiting, asthma, sepsis, respiratory failure | 12 |
+
+**Results** (12 days, mean per day, manual → AI):
+
+| Preset | Avg wait | P90 wait | Past 4 h | Under-triaged | Deteriorated | Walk-outs |
+|---|---|---|---|---|---|---|
+| Normal day | 68 → 32 | 177 → 74 | 12.1 → 0 | 24.2 → 4.4 | 7.9 → 5.0 | 8.4 → 0.6 |
+| Evening rush | 104 → 56 | 255 → 140 | 21.7 → 1.8 | 27.3 → 4.7 | 15.9 → 9.2 | 16.1 → 2.0 |
+| Collision | 101 → 48 | 259 → 116 | 18.4 → 0.1 | 28.4 → 4.4 | 14.9 → 7.2 | 13.8 → 0.8 |
+| Respiratory wave | 101 → 51 | 243 → 125 | 21.5 → 0.9 | 28.2 → 5.3 | 14.8 → 8.9 | 16.2 → 1.9 |
+
+The relative gains hold under every preset. The AI ED is worse than manual on
+average wait on 1 of 36 surge days and on deteriorations on 4. Under the
+evening rush it starts missing the 4-hour target (1.8 a day). Replays of seed 8
+match the recordings exactly with 0 fallbacks.
+
+Helpers (gitignored): `var/analysis/surge_size.py` (manual-arm sizing),
+`var/analysis/record_surge.sh` (recording), `var/analysis/surge_summary.py`
+(the table above, from `var/rec4/`).
+
 ### State
 
-- 29 tests passing. Commits through `c43578b` plus this update are local, not pushed.
-- API spend today: $0 (all replay). Running total still about $3.70.
+- 36 tests passing.
+- Pushed through `a5bc568`; the surge-preset commit is local.
+- API spend today: about $0.20 (surge recordings). Running total about $3.90.
 
 **Next:**
-1. Timed in-person run-through of the script at the target screen resolution. Check whether the AI decisions panel (bottom right) is visible without scrolling during the live segment.
-2. Build the "what each decision is worth" slide from the table.
-3. README refresh: how to run, record and replay, and the headline results.
-4. Scenario presets with time-limited surges, if there's time.
-5. Push to GitHub.
+1. The user's repeated run-throughs of the script, then adjust it.
+2. Talk tracks for the four audiences (pipeline platform, data platform, two partner SIs): what to emphasize, which profile and preset to run, and the "why us" angle for each. Keep company-specific material out of the public repo.
+3. Push the surge-preset commit.
 
 ---
 
@@ -646,19 +695,19 @@ something to learn.
 - [x] **Warm start** (day 2).
 - [x] **Recorded seeds** matching the UI defaults: 3 and 7, normal and surge, opening 14:00 (day 2).
 - [x] **Deterioration fix:** early bed requests from admission prediction (day 2).
-- [ ] **Scenario presets:** time-limited surges (e.g. a 3–4 h evening rush). A 24-hour 1.5× surge overwhelms both EDs, which isn't realistic. Pre-record each preset.
+- [x] **Scenario presets** (day 3): evening rush, multi-vehicle collision, respiratory wave; recorded for 12 days.
 - [x] **Choose demo seeds:** 8 (backup 4), from 12 recorded days (day 2).
 - [x] **Check the 60-minute boarding assumption:** it's conservative against the published simulations (day 2).
 - [x] **Dry run of the delivery script** (day 2): found 5 issues, all fixed.
 - [x] **"AI decisions" panel** (day 3): all four decisions visible as they happen, with reasons, and emitted as `ai.decision` events.
 - [x] **Decision ablation** (day 3): what each decision contributes, over 12 days, replayed at no API cost.
-- [ ] **"What each decision is worth" slide** from the ablation table.
+- [x] **"What each decision is worth" slide** (day 3).
 - [ ] **Rehearse the script** in person end to end, timed, at the target screen resolution.
 - [ ] **Optional realism:** make walk-outs more likely after very long overnight waits.
 - [ ] **Optional realism:** give false-positive bed requests a cost (idle inpatient bed time).
 - [x] **Demo script** (day 2): `docs/DEMO_SCRIPT.md`, a 10-minute slot with a 3-minute live segment, plus a pipeline-pitch add-on and Q&A.
 - [ ] **Narrative panel text** per profile in the dashboard ("Why it matters" is generic today).
-- [ ] **README refresh.**
+- [x] **README refresh** (day 3).
 - [x] **Push to GitHub** (day 2, through `3f5b6fe`).
 
 ### Phase 7: Event-pipeline integration (optional)

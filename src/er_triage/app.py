@@ -69,6 +69,7 @@ class StartRequest(BaseModel):
     seed: int = 3
     speed: float = Field(2.0, gt=0, le=60)
     surge: float = Field(1.0, gt=0, le=3)
+    preset: str = Field("normal", pattern="^(normal|evening-rush|mvc|flu-wave)$")
     volume: float = Field(150, gt=0, le=600)
     ai_mode: str = Field("replay", pattern="^(claude|replay|rules)$")
     start: str = "2026-11-06T14:00:00-07:00"

@@ -65,6 +65,25 @@ Method and caveats: [`BUILD_LOG.md`](BUILD_LOG.md), day 3.
 
 These are simulation results, not clinical evidence.
 
+### Under a surge
+
+Three time-limited surge presets add patients on top of the same normal day
+(same patients, plus extra ones from a separate random stream), recorded for
+all 12 days. Mean per day, manual → AI:
+
+| Preset | Extra patients | Avg wait | Walk-ins past 4 h | Deteriorated | Left without being seen |
+|---|---|---|---|---|---|
+| Normal day | 0 | 68 → 32 min | 12.1 → 0 | 7.9 → 5.0 | 8.4 → 0.6 |
+| Evening rush (+35%, 17:00–21:00) | 12 | 104 → 56 min | 21.7 → 1.8 | 15.9 → 9.2 | 16.1 → 2.0 |
+| Multi-vehicle collision (18:30) | 8 by ambulance | 101 → 48 min | 18.4 → 0.1 | 14.9 → 7.2 | 13.8 → 0.8 |
+| Respiratory wave (+15%, 12:00–24:00) | 12 | 101 → 51 min | 21.5 → 0.9 | 14.8 → 8.9 | 16.2 → 1.9 |
+
+The ED runs close to capacity, so a dozen extra patients raise the manual
+ED's average wait by about half. The presets are sized to stress it without
+collapsing it. The collision is a fixed casualty list (2 major trauma, an
+anticoagulated head injury, and walking wounded) with collision-specific
+triage notes.
+
 ## Architecture
 
 ```
@@ -130,9 +149,12 @@ uv run er-triage simulate --seed 8 --ai claude --offline --warmup 30 \
     --start 2026-11-06T14:00:00-07:00 --minutes 1440 --speed 600
 ```
 
-Seeds 1–12 at normal volume, plus seeds 3 and 7 at 1.5× surge, have been
-recorded with prompt `ctas-v2`, opening Fri 2026-11-06 14:00. They live in the
-local database, not in the repo.
+Add `--preset evening-rush|mvc|flu-wave` to record or replay a surge day
+(only the surge patients are new, so recording a preset costs a few cents).
+
+Seeds 1–12 have been recorded with prompt `ctas-v2`, opening Fri 2026-11-06
+14:00, for the normal day and all three surge presets (plus seeds 3 and 7 at a
+whole-day 1.5× surge). They live in the local database, not in the repo.
 
 ## Synthetic EHR feed
 
@@ -243,7 +265,8 @@ state snapshot every second over server-sent events:
   list of the latest; click a line to open the patient
 - click a patient for the triage note, vitals, and every triage decision
   with Claude's rationale, red flags, likely admission and latency
-- controls: seed, opening time, arrivals (normal or surge), AI mode (live
+- controls: seed, opening time, arrivals (normal day or a surge preset, shaded
+  on the time charts), AI mode (live
   Claude, recorded replay, rules only), warm start, pause/resume, speed,
   skip to end of day
 - `ER_DEMO_PROFILE=pipeline-pitch` adds the event-stream and sink panel
