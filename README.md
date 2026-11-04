@@ -2,13 +2,68 @@
 
 AI-assisted emergency department intake and triage, demonstrated on a live,
 synthetic hospital data feed. The same stream of arriving patients is run
-through two parallel EDs — **manual triage** and **AI-assisted triage** — so
-the effect on wait times is visible side by side, in real time.
+through two parallel EDs — **manual triage** and **AI-assisted triage** — with
+the same staff and beds, so the effect on wait times is visible side by side,
+in real time.
+
+**The question it answers:** *which decisions, backed by AI, need to be made
+to improve wait times?* The demo is organized around four of them:
+
+| # | Decision | Manual ED | AI-assisted ED |
+|---|---|---|---|
+| 1 | **Who is most urgent?** | Nurse triage under pressure | Claude triages with a rationale; it can raise acuity above the vital-sign rules, never lower it |
+| 2 | **Who is seen next?** | CTAS, then first-come | SLO-aware queue: CTAS 1–2 first, then by how far each patient is through their CTAS target; walk-ins nearing 4 h go first |
+| 3 | **When do we open more capacity?** | Rapid-assessment zone on fixed hours (11:00–21:00) | Zone opened whenever physicians are free and walk-ins are waiting |
+| 4 | **Who will need a bed?** | Bed requested after the physician decides to admit | Claude predicts admission at triage and the bed request starts then |
 
 - **SLI:** time from arrival to physician, by CTAS level
 - **SLO:** walk-in patients seen in under 4 hours
 - **Triage scale:** CTAS (Canadian Triage and Acuity Scale, levels 1–5)
 - **Data:** 100% synthetic. No real patient information.
+
+## Results
+
+Mean per day over 12 simulated days, recorded with Claude, measured from a
+warmed-up ED (30 h of history before opening), identical resources:
+
+| Metric | Manual | AI-assisted | Change |
+|---|---|---|---|
+| Avg wait to physician | 68 min | 32 min | −53% |
+| P90 wait to physician | 177 min | 74 min | −58% |
+| Walk-ins past the 4 h SLO | 12.1 | 0 | −100% |
+| Under-triaged at intake | 24.2 | 4.4 | −82% |
+| Deteriorated while waiting | 7.9 | 5.0 | −37% |
+| Left without being seen | 8.4 | 0.6 | −93% |
+| Seen after true CTAS target | 47.8 | 31.7 | −34% |
+
+The improvements are calibrated to land in published ranges (rapid-assessment
+zones about 20–40%), not tuned to look dramatic. Results vary a lot by day:
+on the quietest days there is nothing to decide and the two EDs perform about
+the same.
+
+### What each decision is worth
+
+The same 12 days replayed with each AI decision switched back to standard
+practice in turn (change in the AI ED against all four on, per day):
+
+| Without | Avg wait | P90 wait | Walk-ins past 4 h | Deteriorated | Under-triaged |
+|---|---|---|---|---|---|
+| AI triage (rules CTAS instead) | +7.0 | +16.3 | +0.2 | +1.1 | +19.3 |
+| SLO-aware queue | −2.2 | +1.7 | +2.0 | −0.1 | 0 |
+| Dynamic rapid-assessment zone | +16.9 | +55.6 | +3.7 | +2.7 | 0 |
+| Early bed requests | +5.6 | +13.4 | +0.2 | +1.2 | 0 |
+| All four | +41.4 | +95.9 | +14.2 | +5.8 | +19.3 |
+
+- The **dynamic zone** is the biggest single lever.
+- **Triage** is the safety decision: it barely moves the average wait on a typical day, but it keeps under-triage at 4 a day instead of 24 and protects the hardest days.
+- The **queue** trades 2 minutes of average wait for zero 4-hour breaches.
+- **Bed requests** add to all of it.
+- The decisions back each other up: switch all four off and the AI ED falls back to the manual one.
+
+Slide: [`docs/slides/decision-worth.html`](docs/slides/decision-worth.html).
+Method and caveats: [`BUILD_LOG.md`](BUILD_LOG.md), day 3.
+
+These are simulation results, not clinical evidence.
 
 ## Architecture
 
@@ -34,13 +89,50 @@ uv sync
 uv run er-triage initdb
 uv run er-triage serve          # dashboard at http://127.0.0.1:8000
 uv run pytest
-
-# Headless synthetic feed: 8 simulated hours at 60 sim-minutes per second
-uv run er-triage simulate --minutes 480 --speed 60 --seed 42
 ```
 
 Put your Anthropic API key in `.key` (gitignored). Copy `.env.example` to
-`.env` to change settings.
+`.env` to change settings (all use the `ER_` prefix).
+
+## Running the demo
+
+The demo replays recorded Claude decisions, so it is deterministic, free, and
+works offline. The delivery script is [`docs/DEMO_SCRIPT.md`](docs/DEMO_SCRIPT.md).
+
+```bash
+brew services start postgresql@17
+nohup uv run er-triage serve --port 8765 > var/server.log 2>&1 &
+```
+
+Open http://127.0.0.1:8765, choose seed **8** (backup **4**), opening 14:00,
+"Normal day", AI triage "Claude (recorded replay)", warm start on, then
+**Start new run** and **Pause**. At 2 sim-min/s, three real minutes covers
+14:00–20:00; **Skip to end of day** fast-forwards to Sat 14:00 for the
+full-day results.
+
+Start the server with `nohup`, not as a child of a process that may be
+stopped, or it goes down with it.
+
+## Recording and replaying
+
+Every Claude response is stored in the `llm_responses` table, keyed by the
+exact request (prompt version, patient, vitals). A replay with `--offline`
+makes zero API calls and reproduces the recording exactly; a cache miss falls
+back to the rules triager and is counted. `initdb --drop` preserves the table.
+Recordings are pinned to every input, including the opening time, so record
+with the same settings you will replay with:
+
+```bash
+# Record one day (about $0.15 of API calls, including the 30 h warm-up), then replay it for free
+uv run er-triage simulate --seed 8 --ai claude --warmup 30 \
+    --start 2026-11-06T14:00:00-07:00 --minutes 1440 --speed 600
+uv run er-triage simulate --seed 8 --ai claude --offline --warmup 30 \
+    --start 2026-11-06T14:00:00-07:00 --minutes 1440 --speed 600
+```
+
+Seeds 1–12 at normal volume, plus seeds 3 and 7 at 1.5× surge, have been
+recorded with prompt `ctas-v2`, opening Fri 2026-11-06 14:00. They live in the
+local database, not in the repo.
 
 ## Synthetic EHR feed
 
@@ -71,17 +163,19 @@ simplified; it is not clinical guidance.
 
 `src/er_triage/sim/ed.py`. Both arms get **identical resources**: 5 main
 physicians, 20 beds (+4 hallway stretchers for CTAS 1-2 only), resus
-bypass, a fast track (1 physician, 4 chairs, 09:00-23:00), a 3-chair intake
-zone, a 10-space results-waiting area, and 2 triage nurses. Admitted
-patients board for 4-12h (access block). They differ only in decisions:
+bypass, a fast track (1 physician, 4 chairs, 09:00-23:00), a 2-chair
+rapid-assessment (intake) zone staffed by idle main physicians, an 8-space
+results-waiting area, and 2 triage nurses. Admitted patients board for 4-10 h
+(access block). They differ only in decisions:
 
 |                 | Baseline (manual)                    | AI-assisted                                   |
 |-----------------|--------------------------------------|-----------------------------------------------|
-| Triage          | Nurse model with realistic error     | Decision support (rules now; Claude in Phase 4) |
+| Triage          | Nurse model with realistic error     | Claude (rules fallback), with a vital-sign guardrail |
 | Reassessment    | Notices deterioration ~50% of time   | Re-scores at every vitals check               |
 | Queue order     | CTAS, then first-come-first-served   | CTAS 1-2 first; walk-ins near SLO; then % of target elapsed |
-| Fast track      | Assigned CTAS 4-5                    | Also stable ambulatory CTAS 3 under 65        |
+| Fast track      | Assigned CTAS 4-5                    | Claude's fast-track call; stable ambulatory CTAS 3 under 65 |
 | Intake zone     | Fixed hours (11:00-21:00)            | Opened dynamically when physicians are idle   |
+| Bed request     | After the physician decides to admit | At triage for predicted admissions (60 min less boarding when right) |
 
 Every per-patient outcome (treatment time, admission, boarding, patience,
 deterioration threshold, vitals noise) is drawn once and shared by both
@@ -90,25 +184,14 @@ is scored against **true** acuity, and patients who leave without being
 seen keep their wait in the statistics so an ED can't look faster by
 losing patients.
 
-Calibrated to a crowded but stable urban ED (4-10h boarding), measured
-in **steady state** (days 2-3 of 3-day runs, after the department has filled;
-day 1 starts empty and flatters both arms). Flow levers alone land within
-published ranges for rapid-assessment zones (~20-40%).
+**Warm start:** a run simulates 30 hours before the demo opens (replay only,
+events muted), so both EDs open in a realistic steady state with patients
+already boarding. KPIs count from opening. Starting from an empty ED flatters
+both arms.
 
-Result with Claude triage, mean of 8 steady-state ED-days, identical resources:
-
-| Metric                          | Manual   | AI-assisted | Change |
-|---------------------------------|----------|-------------|--------|
-| Under-triaged at intake         | 23.2     | 4.8         | -80%   |
-| Avg wait to physician           | 60 min   | 35 min      | -42%   |
-| P90 wait to physician           | 164 min  | 96 min      | -42%   |
-| Walk-in 4h SLO breaches / day   | 8.7      | 0           | -100%  |
-| Seen after true CTAS target     | 47       | 36          | -24%   |
-| Deteriorated while waiting      | 6.8      | 4.2         | -38%   |
-| Left without being seen         | 5.9      | 0.8         | -87%   |
-
-Better triage alone mostly changes *who* waits (sick patients first); the
-overall wait reduction comes from flow decisions. Both are needed.
+The 60-minute boarding cut is deliberately conservative against published
+simulations of proactive bed requests (30–70% cuts from a ~4 h baseline);
+see the literature check in `BUILD_LOG.md`, day 2.
 
 ## AI triage (Claude)
 
@@ -118,6 +201,8 @@ overall wait reduction comes from flow decisions. Both are needed.
   escalate to Claude Sonnet 5.5 (~8%). Structured output via
   `messages.parse` with a Pydantic schema; the static CTAS system prompt is
   prompt-cached.
+- **Outputs:** CTAS level, rationale, red flags, immediate actions,
+  fast-track eligibility and likely admission.
 - **Inputs:** only what a triage nurse sees. Never ground truth or ED load.
 - **Guardrail:** Claude can raise acuity above the vital-sign rules, never
   lower it.
@@ -125,9 +210,6 @@ overall wait reduction comes from flow decisions. Both are needed.
   calculator. In live mode the patient is triaged provisionally by rules if
   Claude hasn't answered yet, and Claude's decision is applied on arrival
   (or recorded for audit if the patient was already seen).
-- **Replay:** every response is stored in `llm_responses`, keyed by the exact
-  request. Re-running a seed with `--offline` replays it with zero API calls
-  and identical results. `initdb --drop` preserves this table.
 
 Offline accuracy on 120 stratified synthetic patients
 (`uv run er-triage eval-triage`):
@@ -136,15 +218,14 @@ Offline accuracy on 120 stratified synthetic patients
 |------------------|-------|--------------|-----------------|---------------|
 | Nurse model      | 75%   | 22%          | 16              | 5/16          |
 | CTAS rules       | 81%   | 18%          | 13              | 0/16          |
-| Claude (routed)  | 94%   | 1%           | 0               | 16/16         |
+| Claude (routed)  | 93%   | 1%           | 0               | 16/16         |
+
+Admission prediction at triage: 77% accurate (65% precision, 87% recall),
+against a best possible 81% for this data, because the simulated disposition
+is random given the presentation.
 
 Caveat: synthetic triage notes are cleaner than real ones. This is a
 demonstration, not clinical validation.
-
-```bash
-uv run er-triage simulate --minutes 1440 --speed 120 --seed 3 --ai claude            # record
-uv run er-triage simulate --minutes 1440 --speed 120 --seed 3 --ai claude --offline  # replay
-```
 
 ## Live dashboard
 
@@ -152,15 +233,19 @@ uv run er-triage simulate --minutes 1440 --speed 120 --seed 3 --ai claude --offl
 single page (Alpine.js + ECharts from CDN, no build step) that receives a full
 state snapshot every second over server-sent events:
 
-- KPI tiles comparing both EDs, charts of wait to physician, longest walk-in
-  wait against the 4h SLO, and the waiting room by true acuity (each with a
-  data-table view)
+- KPI tiles comparing both EDs since opening, charts of wait to physician,
+  longest walk-in wait against the 4 h SLO, and the waiting room by true
+  acuity (each with a data-table view)
 - both live queues with capacity (beds, hallway, boarding, fast track,
   intake, results area); "Show ground truth" reveals under-triaged patients
+- **AI decisions panel:** each time the AI ED acts differently from standard
+  practice, with the reason. One counter per decision (also a filter) and a
+  list of the latest; click a line to open the patient
 - click a patient for the triage note, vitals, and every triage decision
-  with Claude's rationale, red flags and latency
-- controls: seed, day start, arrival surge, AI mode (live Claude, recorded
-  replay, rules only), pause/resume, speed
+  with Claude's rationale, red flags, likely admission and latency
+- controls: seed, opening time, arrivals (normal or surge), AI mode (live
+  Claude, recorded replay, rules only), warm start, pause/resume, speed,
+  skip to end of day
 - `ER_DEMO_PROFILE=pipeline-pitch` adds the event-stream and sink panel
 
 Light and dark themes use the reference data-viz palette: color identifies
@@ -170,8 +255,9 @@ single static state (for screenshots).
 ## Event stream
 
 Every clinical and operational event (arrivals, vitals, triage decisions,
-deterioration, departures, SLI snapshots, SLO breaches, LLM calls) is emitted
-as a versioned JSON envelope through a non-blocking batched bus. Sinks:
+AI decisions, deterioration, departures, SLI snapshots, SLO breaches, LLM
+calls) is emitted as a versioned JSON envelope through a non-blocking batched
+bus. Sinks:
 
 | Sink      | Use                                                        |
 |-----------|------------------------------------------------------------|
@@ -179,5 +265,13 @@ as a versioned JSON envelope through a non-blocking batched bus. Sinks:
 | `console` | stdout                                                     |
 | `hec`     | HTTP Event Collector — Cribl Stream's Splunk HEC source, or Splunk |
 
-Patient events carry synthetic PHI on purpose, so downstream pipelines can
-demonstrate masking and redaction.
+`ai.decision` events carry the decision (`triage`, `queue`, `intake`, `bed`),
+the patient and the reason, so a downstream pipeline can observe what the AI
+decided and why. Patient events carry synthetic PHI on purpose, so downstream
+pipelines can demonstrate masking and redaction.
+
+## Project docs
+
+- [`docs/DEMO_SCRIPT.md`](docs/DEMO_SCRIPT.md): the 10-minute delivery script and Q&A
+- [`docs/slides/decision-worth.html`](docs/slides/decision-worth.html): "What each decision is worth" slide
+- [`BUILD_LOG.md`](BUILD_LOG.md): what was built each day, decisions, experiments (including the ones that failed) and lessons learned
