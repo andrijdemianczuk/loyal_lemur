@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>What each AI decision is worth</title>
+<!--
+  One slide for the demo script's 6:15–8:00 segment ("What each decision is
+  worth"). Source: decision ablation, BUILD_LOG.md day 3 — 12 recorded days,
+  each AI decision switched back to standard practice in turn (means per day).
+  Self-contained: open in a browser at 1600×900 (or full screen) and present
+  or screenshot. Light by default; add ?dark for the dark version.
+-->
+<style>
+  :root {
+    --page: #f9f9f7; --surface-1: #fcfcfb;
+    --text-primary: #0b0b0b; --text-secondary: #52514e; --text-muted: #898781;
+    --grid: #e1e0d9; --axis: #c3c2b7; --border: rgba(11, 11, 11, 0.10); --wash: rgba(11, 11, 11, 0.04);
+    --series-1: #2a78d6; --series-2: #eb6834;
+  }
+  :root.dark {
+    color-scheme: dark;
+    --page: #0d0d0d; --surface-1: #1a1a19;
+    --text-primary: #f0efec; --text-secondary: #c3c2b7; --text-muted: #898781;
+    --grid: #2c2c2a; --axis: #383835; --border: rgba(255, 255, 255, 0.10); --wash: rgba(255, 255, 255, 0.05);
+    --series-1: #3987e5; --series-2: #d95926;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; background: var(--page); color: var(--text-primary);
+    font: 16px/1.4 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  body { display: grid; place-items: center; }
+  .slide { width: min(100vw, calc(100vh * 16 / 9)); aspect-ratio: 16 / 9; padding: 3.2% 4%;
+    display: flex; flex-direction: column; gap: 2.2%; container-type: inline-size; }
+  h1 { margin: 0; font-size: 3.1cqw; font-weight: 650; letter-spacing: -0.01em; }
+  .sub { margin: 0.4cqw 0 0; font-size: 1.35cqw; color: var(--text-secondary); }
+
+  .kpis { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1.2cqw; }
+  .kpi { background: var(--surface-1); border: 1px solid var(--border); border-radius: 0.6cqw; padding: 1cqw 1.3cqw; }
+  .kpi .label { font-size: 1.05cqw; color: var(--text-secondary); }
+  .kpi .value { font-size: 2.6cqw; font-weight: 650; font-variant-numeric: tabular-nums; }
+  .kpi .value small { font-size: 1.2cqw; font-weight: 500; color: var(--text-secondary); margin-left: 0.4cqw; }
+  .kpi .note { font-size: 1cqw; color: var(--text-muted); }
+
+  table { width: 100%; border-collapse: collapse; font-size: 1.25cqw; font-variant-numeric: tabular-nums; }
+  caption { text-align: left; font-size: 1.15cqw; color: var(--text-secondary); padding-bottom: 0.6cqw; }
+  th { font-size: 1.0cqw; font-weight: 500; color: var(--text-secondary); text-align: right;
+    padding: 0 0.8cqw 0.5cqw; border-bottom: 1px solid var(--axis); vertical-align: bottom; }
+  th:first-child, td:first-child { text-align: left; padding-left: 0; }
+  th.bar-h { text-align: left; }
+  td { padding: 0.75cqw 0.8cqw; border-bottom: 1px solid var(--grid); text-align: right; vertical-align: middle; }
+  td.name b { display: block; font-size: 1.35cqw; }
+  td.name span { font-size: 1.05cqw; color: var(--text-secondary); }
+  td.strong { font-weight: 700; }
+  td.zero { color: var(--text-muted); }
+
+  /* Ranked bars: one hue, one shared zero baseline, thin marks, rounded data-end only. */
+  td.bar { width: 30%; padding-right: 2cqw; }
+  .track { position: relative; height: 1.5cqw; }
+  .baseline { position: absolute; top: -0.4cqw; bottom: -0.4cqw; width: 1px; background: var(--axis); }
+  .b { position: absolute; top: 50%; height: min(24px, 1.3cqw); transform: translateY(-50%);
+    background: var(--series-1); cursor: default; }
+  .b.pos { border-radius: 0 4px 4px 0; }
+  .b.neg { border-radius: 4px 0 0 4px; }
+  .b-label { position: absolute; top: 50%; transform: translateY(-50%); font-size: 1.2cqw; font-weight: 650;
+    color: var(--text-primary); white-space: nowrap; }
+  .b:hover, .b:focus-visible { outline: 2px solid var(--surface-1); box-shadow: 0 0 0 4px var(--series-1); }
+  .tip { position: fixed; pointer-events: none; background: var(--surface-1); color: var(--text-primary);
+    border: 1px solid var(--border); border-radius: 6px; padding: 6px 9px; font-size: 13px;
+    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.12); opacity: 0; transition: opacity 0.1s; max-width: 280px; }
+
+  tr.ref td { color: var(--text-secondary); }
+  tr.ref td.name b { font-size: 1.2cqw; font-weight: 600; }
+  tr.all td { border-bottom: none; border-top: 1px solid var(--axis); }
+
+  .foot { margin-top: auto; display: flex; flex-direction: column; gap: 0.3cqw;
+    font-size: 1.05cqw; color: var(--text-muted); }
+  .foot b { color: var(--text-primary); font-weight: 650; }
+  .foot .key { font-size: 1.3cqw; color: var(--text-secondary); }
+</style>
+</head>
+<body>
+<main class="slide">
+  <header>
+    <h1>What each AI decision is worth</h1>
+    <p class="sub">12 simulated days, same patients, staff and beds. Each row switches one decision back to standard practice and measures what's lost.</p>
+  </header>
+
+  <section class="kpis" aria-label="Headline results">
+    <div class="kpi"><div class="label">Average wait to physician</div>
+      <div class="value">68 → 32 min<small>manual → AI</small></div>
+      <div class="note">P90: 177 → 74 min</div></div>
+    <div class="kpi"><div class="label">Walk-ins past 4 hours, per day</div>
+      <div class="value">12.1 → 0<small>manual → AI</small></div>
+      <div class="note">Left without being seen: 8.4 → 0.6</div></div>
+    <div class="kpi"><div class="label">Deteriorated while waiting, per day</div>
+      <div class="value">7.9 → 5.0<small>manual → AI</small></div>
+      <div class="note">Under-triaged: 24 → 4</div></div>
+  </section>
+
+  <table>
+    <caption>Without this decision, per day (change against all four on)</caption>
+    <thead>
+      <tr>
+        <th scope="col">Decision</th>
+        <th scope="col" class="bar-h">Average wait added (min)</th>
+        <th scope="col">P90 wait (min)</th>
+        <th scope="col">Walk-ins<br>past 4 h</th>
+        <th scope="col">Deteriorated</th>
+        <th scope="col">Under-<br>triaged</th>
+        <th scope="col">Days with longer<br>waits (of 12)</th>
+      </tr>
+    </thead>
+    <tbody id="rows"></tbody>
+  </table>
+
+  <footer class="foot">
+    <span class="key">Separately the four are worth <b>27 min</b> of average wait. Switch all four off and you lose <b>41 min</b>, back to the manual ED (73 vs 68 min).</span>
+    <span>Synthetic simulation, not clinical evidence · means per day</span>
+  </footer>
+</main>
+<div class="tip" id="tip" role="tooltip"></div>
+
+<script>
+  if (new URLSearchParams(location.search).has("dark")) document.documentElement.classList.add("dark");
+
+  // Decision ablation, BUILD_LOG.md day 3. Ranked by average wait added.
+  const ROWS = [
+    { name: "When to open capacity", role: "Dynamic rapid-assessment zone · biggest lever",
+      avg: 16.9, p90: 55.6, slo: 3.7, det: 2.7, under: 0, worse: 11 },
+    { name: "Who is most urgent", role: "Claude triage · the safety decision",
+      avg: 7.0, p90: 16.3, slo: 0.2, det: 1.1, under: 19.3, worse: 4,
+      note: "Typical day: no change (median −1.8 min). Hardest days: +18 to +56 min." },
+    { name: "Who will need a bed", role: "Bed requested at triage",
+      avg: 5.6, p90: 13.4, slo: 0.2, det: 1.2, under: 0, worse: 8 },
+    { name: "Who is seen next", role: "SLO-aware queue · protects the tail",
+      avg: -2.2, p90: 1.7, slo: 2.0, det: -0.1, under: 0, worse: 4,
+      note: "A deliberate tradeoff: 2 minutes of average wait for zero 4-hour breaches." },
+  ];
+  const MIN = -5, MAX = 20;  // shared scale for the bar column
+  const pct = v => ((v - MIN) / (MAX - MIN)) * 100;
+  const sign = (v, d = 1) => v === 0 ? "0" : (v > 0 ? "+" : "−") + Math.abs(v).toFixed(d);
+  const best = k => Math.max(...ROWS.map(r => r[k]));
+
+  const body = document.getElementById("rows");
+  for (const r of ROWS) {
+    const left = pct(Math.min(0, r.avg)), width = Math.abs(pct(r.avg) - pct(0));
+    const labelPos = r.avg >= 0 ? `left: calc(${pct(r.avg)}% + 0.6cqw)` : `right: calc(${100 - pct(r.avg)}% + 0.6cqw)`;
+    const cell = (k, d = 1) => `<td class="${r[k] === 0 ? "zero" : r[k] === best(k) ? "strong" : ""}">${sign(r[k], d)}</td>`;
+    const tip = `${r.name}: without it, average wait ${sign(r.avg)} min, P90 ${sign(r.p90)} min, `
+      + `${sign(r.slo)} walk-ins past 4 h, ${sign(r.det)} deteriorated per day.${r.note ? " " + r.note : ""}`;
+    body.insertAdjacentHTML("beforeend", `
+      <tr>
+        <td class="name"><b>${r.name}</b><span>${r.role}</span></td>
+        <td class="bar"><div class="track">
+          <div class="baseline" style="left:${pct(0)}%"></div>
+          <div class="b ${r.avg >= 0 ? "pos" : "neg"}" tabindex="0" role="img" aria-label="${tip}"
+               data-tip="${tip}" style="left:${left}%; width:${width}%"></div>
+          <span class="b-label" style="${labelPos}">${sign(r.avg)}</span>
+        </div></td>
+        ${cell("p90")}${cell("slo")}${cell("det")}${cell("under")}
+        <td>${r.worse}</td>
+      </tr>`);
+  }
+  body.insertAdjacentHTML("beforeend", `
+    <tr class="ref all">
+      <td class="name"><b>All four off</b></td>
+      <td class="bar"><div class="track"><span class="b-label" style="left:0; font-weight:600">+41.4 (off scale)</span></div></td>
+      <td>+95.9</td><td>+14.2</td><td>+5.8</td><td>+19.3</td><td>9</td>
+    </tr>`);
+
+  // Hover / focus tooltip for the bars.
+  const tipEl = document.getElementById("tip");
+  const show = (el, x, y) => { tipEl.textContent = el.dataset.tip; tipEl.style.left = `${x + 14}px`; tipEl.style.top = `${y + 14}px`; tipEl.style.opacity = 1; };
+  for (const b of document.querySelectorAll(".b")) {
+    b.addEventListener("mousemove", e => show(b, e.clientX, e.clientY));
+    b.addEventListener("mouseleave", () => { tipEl.style.opacity = 0; });
+    b.addEventListener("focus", () => { const r = b.getBoundingClientRect(); show(b, r.right, r.top); });
+    b.addEventListener("blur", () => { tipEl.style.opacity = 0; });
+  }
+</script>
+</body>
+</html>

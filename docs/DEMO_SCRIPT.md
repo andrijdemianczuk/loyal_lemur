@@ -147,8 +147,9 @@ Point at the tiles while you score each decision with the 12-day averages:
 
 ### 6:15–8:00 · What each decision is worth (the credibility moment)
 
-Show the slide (12-day averages; each row switches one decision back to
-standard practice, change against all four on):
+Show the slide, `docs/slides/decision-worth.html` (open in a browser, full
+screen; add `?dark` for the dark version). Its numbers (12-day averages; each
+row switches one decision back to standard practice, change against all four on):
 
 | | Avg wait | P90 wait | Walk-ins past 4 h | Deteriorated | Under-triaged |
 |---|---|---|---|---|---|
