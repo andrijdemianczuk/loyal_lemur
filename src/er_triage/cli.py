@@ -100,19 +100,23 @@ async def _simulate(args: argparse.Namespace) -> None:
     engine.stop_at = end
     engine.start()
     try:
-        while engine.processed_until < end:
-            await asyncio.sleep(engine.tick_seconds)
-            line = "  ".join(
-                f"{arm.value:>8}: wait {len(a.by_status(*WAITING)):3d} "
-                f"treat {len(a.by_status(EncounterStatus.IN_TREATMENT)):3d} "
-                f"breach {a.counters.slo_breaches:3d}"
-                for arm, a in engine.arms.items()
-            )
-            print(f"  {engine.processed_until:%a %H:%M}  {line}", flush=True)
+        try:
+            while engine.processed_until < end:
+                await asyncio.sleep(engine.tick_seconds)
+                line = "  ".join(
+                    f"{arm.value:>8}: wait {len(a.by_status(*WAITING)):3d} "
+                    f"treat {len(a.by_status(EncounterStatus.IN_TREATMENT)):3d} "
+                    f"breach {a.counters.slo_breaches:3d}"
+                    for arm, a in engine.arms.items()
+                )
+                print(f"  {engine.processed_until:%a %H:%M}  {line}", flush=True)
+        finally:
+            await engine.stop()
+        # The scorecard's final snapshot is itself an event: emit it before
+        # the bus closes so every sink receives it.
+        _scorecard(engine, end)
     finally:
-        await engine.stop()
         await bus.aclose()
-    _scorecard(engine, end)
     if stats := getattr(ai_triager, "stats", None):
         print(f"\n  Claude: {stats['calls']} calls ({stats['cache_hits']} replayed), "
               f"{stats['escalations']} escalated, {stats['fallbacks']} fallbacks, "
@@ -120,6 +124,11 @@ async def _simulate(args: argparse.Namespace) -> None:
         c = engine.arms[Arm.AI].counters
         print(f"  Late AI decisions: {c.ai_late_applied} applied, {c.ai_late_dropped} dropped "
               f"(patient already seen)")
+    sinks = ", ".join(
+        f"{name} {s.sent} sent" + (f", {s.failed} failed ({s.last_error})" if s.failed else "")
+        for name, s in bus.stats.sinks.items()
+    )
+    print(f"  Events: {bus.stats.emitted} emitted, {bus.stats.dropped} dropped; {sinks}")
 
 
 def build_ai_triager(settings, choice: str | None = None, *, offline: bool = False,

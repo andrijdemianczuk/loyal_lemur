@@ -586,16 +586,40 @@ Helpers (gitignored): `var/analysis/surge_size.py` (manual-arm sizing),
 `var/analysis/record_surge.sh` (recording), `var/analysis/surge_summary.py`
 (the table above, from `var/rec4/`).
 
+### HEC sink against a real pipeline endpoint
+
+First time the HEC sink has sent to a real collector (a cloud pipeline
+platform's HEC source on port 8088) rather than a test transport. It worked
+with configuration only (`ER_EVENT_SINKS=file,hec`, URL and token in `.env`).
+
+- **Delivery stats:** `simulate` now ends with an `Events:` line: emitted,
+  dropped, and sent or failed per sink. Before this, a failing sink only
+  logged a warning.
+- **Two events lost at shutdown:** the first run delivered 336 of 338. The
+  final scorecard saves a whole-run metrics snapshot, which emits an event,
+  and it ran after the bus had closed. The scorecard now runs before
+  `bus.aclose()`. Now 338 of 338.
+- **Bus shutdown drains instead of cancelling:** `aclose()` used to cancel the
+  flush task, which could drop a batch taken off the buffer mid-write. It now
+  signals the loop to finish and awaits it. (Not the cause above, kept anyway.)
+- **Volume, measured (seed 8, one ED, both arms, 24 h):** 2,007 events, about
+  1.3 MB. Largest: vitals 492, triage 312, metrics 192, arrivals 150, Claude
+  calls 175, AI decisions 100. Too small to carry a cost argument by itself;
+  the pipeline story is masking and routing. `patient.arrived` carries full
+  synthetic PHI (name, DOB, health card, postal code, MRN); `llm.call`
+  carries the MRN.
+
 ### State
 
 - 36 tests passing.
-- Pushed through `a5bc568`; the surge-preset commit is local.
+- Pushed through `3df56e7` (surge presets). The HEC fixes above are uncommitted.
 - API spend today: about $0.20 (surge recordings). Running total about $3.90.
 
 **Next:**
 1. The user's repeated run-throughs of the script, then adjust it.
-2. Talk tracks for the four audiences (pipeline platform, data platform, two partner SIs): what to emphasize, which profile and preset to run, and the "why us" angle for each. Keep company-specific material out of the public repo.
-3. Push the surge-preset commit.
+2. Phase 7 has started: a PHI-masking pipeline, then routes by destination.
+3. Talk tracks for the four audiences. Company-specific material stays out of
+   the public repo.
 
 ---
 
@@ -712,7 +736,7 @@ something to learn.
 
 ### Phase 7: Event-pipeline integration (optional)
 
-- [ ] Route the HEC event stream through a pipeline platform (cloud free tier or local).
+- [x] Route the HEC event stream through a pipeline platform (cloud free tier or local). Day 3: delivery verified.
 - [ ] PHI masking, routing and filtering by destination, and volume/cost reduction.
 - [ ] Observability of AI calls (latency, cost, escalations) from the event stream.
 

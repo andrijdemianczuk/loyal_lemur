@@ -48,6 +48,7 @@ class EventBus:
         self._max_buffer = max_buffer
         self._task: asyncio.Task[None] | None = None
         self._wake = asyncio.Event()
+        self._closing = False
         self._loop: asyncio.AbstractEventLoop | None = None
         self.stats = BusStats(sinks={s.name: SinkStats() for s in sinks})
 
@@ -73,7 +74,7 @@ class EventBus:
             self._task = asyncio.create_task(self._run(), name="event-bus")
 
     async def _run(self) -> None:
-        while True:
+        while not self._closing:
             try:
                 await asyncio.wait_for(self._wake.wait(), timeout=self.flush_seconds)
             except TimeoutError:
@@ -99,11 +100,11 @@ class EventBus:
 
     async def aclose(self) -> None:
         if self._task is not None:
-            self._task.cancel()
-            try:
-                await self._task
-            except asyncio.CancelledError:
-                pass
+            # Let the flush loop finish its in-flight batch rather than
+            # cancelling it mid-write (a cancelled write loses that batch).
+            self._closing = True
+            self._wake.set()
+            await self._task
             self._task = None
         await self.flush()
         for sink in self.sinks:
