@@ -623,6 +623,90 @@ with configuration only (`ER_EVENT_SINKS=file,hec`, URL and token in `.env`).
 
 ---
 
+## Day 4 — 2026-11-05
+
+### Event pipeline: masking and routing by destination (Phase 7)
+
+Built on a cloud pipeline platform's free tier, fed by the HEC sink with no
+code changes. The platform configuration lives in the platform, not in this
+repo; this section records the design and what we measured.
+
+**Design:**
+- **Parse once at the source.** HEC events arrive with the whole event as a
+  JSON string in `_raw`. A pre-processing step parses it, so route filters can
+  use `event_type`.
+- **Masking pipeline** (applied to every destination except audit):
+  - record and health card numbers become a salted SHA-256 hash, first 16
+    characters: the same patient gets the same token, so joins still work;
+  - names and date of birth removed (`age` is already a field);
+  - postal code cut to its first 3 characters;
+  - the MRN in `llm.call` gets the same hash, so Claude calls stay linked;
+  - `_raw` is **rebuilt from the masked fields**. Masking the parsed fields
+    alone leaves the original in `_raw`.
+- **Four routes**, in order:
+
+  | Route | Gets | Masked | Final |
+  |---|---|---|---|
+  | audit | every event, original | no | no (copy) |
+  | alerts | `patient.deteriorated`, `slo.breach` | yes | no (copy) |
+  | analytics | everything except `vitals.recorded` | yes | yes |
+  | vitals | what's left (vitals), discarded | — | yes |
+
+  Vitals are kept in the audit store only. Nothing of ours reaches the
+  platform's default route: every event has a deliberate destination.
+- **Three storage datasets** (audit, analytics, alerts), queried with the
+  platform's search.
+
+**Measured, one full replayed day** (seed 8, both arms, offline replay):
+
+| Route | Events | Bytes |
+|---|---|---|
+| audit | 2,009 | 1.20 MB |
+| analytics | 1,517 | 0.98 MB (about 20% less, all from leaving out vitals) |
+| alerts | 18 | 9.4 KB |
+| vitals (audit only) | 492 | 0.25 MB |
+
+- Masking is byte-neutral: the 16-character hashes are longer than the
+  originals, which cancels out the removed names and dates.
+- The alert dataset reproduces the scorecard exactly: manual 8
+  deteriorations and 7 SLO breaches, AI 3 deteriorations and no breaches.
+- One AI triage decision (the 76F epigastric pain at 15:11) can be traced
+  from the masked analytics view to the full audit record, with Claude's
+  rationale, in two queries.
+
+**Three things went wrong, each caught by checking the destination rather
+than the pipe:**
+1. **The platform's JSON serializer dropped the nested `data` object.** The
+   route monitor then showed a 73% "reduction", which was really the clinical
+   payload going missing. Found by reading one stored event. Replaced with an
+   explicit expression that builds the JSON.
+2. **Byte counts read 0 B** after the first masking version, because the
+   platform measures bytes from `_raw` and the pipeline had deleted it.
+   Rebuilding `_raw` fixed both the measurement and the design.
+3. **One route's output was left on the default destination.** The route
+   monitor showed a healthy flow while the analytics dataset stayed empty.
+
+**Web server:** settings are only read at startup, so the server running
+since day 3 had no HEC sink. It was restarted with the `pipeline-pitch`
+profile, so live demo runs now stream to the pipeline. The old process didn't
+exit on SIGTERM while a browser held its server-sent-events connection, and
+needed a hard kill. (Known issue below.)
+
+### State
+
+- 36 tests passing. Pushed through `ce5feba` (HEC delivery fixes).
+- No API spend today: every replay was offline. Running total about $3.90.
+- Presentation material for specific audiences is kept outside this public
+  repo.
+
+**Next:**
+1. Timed rehearsals of the demo, then adjust.
+2. Phase 7: observability of AI calls (latency, escalations) from the stream.
+3. Consider a buffered HEC sender (today it retries once, then counts the
+   batch as failed).
+
+---
+
 ## Lessons learned (running list)
 
 Things we would tell someone building a similar system. Each one cost us
@@ -709,6 +793,15 @@ something to learn.
     other up (27 min vs 41 min), and that all-off lands back on the manual
     baseline, which validates the setup. Report how many days each effect
     holds on, not only the mean: triage's +7 min mean is a median of −2. (Day 3)
+20. **Verify at the destination, not at the pipe.** Three pipeline bugs on
+    day 4 all looked healthy on the route monitor: a serializer that dropped
+    the payload (reported as a 73% "reduction"), byte counts measured from a
+    field we had deleted, and a route sending to the wrong place. Reading one
+    stored event, and reconciling counts end to end, found all three. A big
+    volume reduction is a reason to check, not to celebrate. (Day 4)
+21. **Account for every emitted event.** `simulate` now prints emitted vs sent
+    per sink. That one line exposed two events emitted after the bus had
+    closed. (Days 3–4)
 
 ---
 
@@ -737,10 +830,16 @@ something to learn.
 ### Phase 7: Event-pipeline integration (optional)
 
 - [x] Route the HEC event stream through a pipeline platform (cloud free tier or local). Day 3: delivery verified.
-- [ ] PHI masking, routing and filtering by destination, and volume/cost reduction.
+- [x] PHI masking, routing and filtering by destination, and volume/cost reduction. Day 4: 4 routes, 3 datasets, measured.
 - [ ] Observability of AI calls (latency, cost, escalations) from the event stream.
 
 ### Known issues / notes
+
+- **The web server may not exit on SIGTERM** while a browser holds a
+  server-sent-events connection; it needed `kill -9` on day 4. Check that only
+  one process listens on 8765 after a restart.
+- **The HEC sink retries once, then drops the batch** (counted as failed).
+  Fine for a demo; production senders need disk buffering.
 
 - Computer-use screen control lacks macOS Accessibility and Screen Recording permissions. Visual checks use headless Chrome on `/?snapshot` instead.
 - Start the dev server with `nohup`, not inside a background task.
