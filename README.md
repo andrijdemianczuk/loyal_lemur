@@ -297,4 +297,5 @@ pipelines can demonstrate masking and redaction.
 
 - [`docs/DEMO_SCRIPT.md`](docs/DEMO_SCRIPT.md): the 10-minute delivery script and Q&A
 - [`docs/slides/decision-worth.html`](docs/slides/decision-worth.html): "What each decision is worth" slide
+- [`manifest/`](manifest/): the whole project as specifications. Run `./manifest/build-it <empty-folder>` and a coding agent rebuilds it from the Markdown
 - [`BUILD_LOG.md`](BUILD_LOG.md): what was built each day, decisions, experiments (including the ones that failed) and lessons learned

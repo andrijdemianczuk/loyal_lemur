@@ -1,0 +1,33 @@
+#!/usr/bin/env bash
+# Build the project from the manifest.
+#
+#   ./manifest/build-it [target-dir] [target-file]
+#
+# Creates target-dir (default ../er-triage-build), copies the manifest into
+# it, and starts Claude Code there with the instruction "build it".
+set -euo pipefail
+
+here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+dest="${1:-$here/../../er-triage-build}"
+target="${2:-targets/local.md}"
+
+command -v claude >/dev/null || {
+  echo "Claude Code is not installed: https://claude.com/claude-code" >&2
+  exit 1
+}
+[[ -f "$here/$target" ]] || { echo "No such target: $here/$target" >&2; exit 1; }
+
+if [[ -d "$dest" && -n "$(ls -A "$dest")" ]]; then
+  echo "$dest exists and is not empty; choose an empty or new folder." >&2
+  exit 1
+fi
+
+mkdir -p "$dest/manifest"
+cp -R "$here"/. "$dest/manifest/"
+rm -f "$dest/manifest/build-it"
+echo "manifest/$target" > "$dest/manifest/TARGET"
+cp "$here/AGENT.md" "$dest/CLAUDE.md"
+
+echo "Manifest copied to $dest (target: $target). Starting Claude Code..."
+cd "$dest"
+exec claude "build it"
