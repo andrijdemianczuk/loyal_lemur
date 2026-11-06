@@ -32,7 +32,7 @@ warmed-up ED (30 h of history before opening), identical resources:
 | P90 wait to physician | 177 min | 74 min | −58% |
 | Walk-ins past the 4 h SLO | 12.1 | 0 | −100% |
 | Under-triaged at intake | 24.2 | 4.4 | −82% |
-| Deteriorated while waiting | 7.9 | 5.0 | −37% |
+| Deteriorated while waiting | 7.9 | 5.0 | −37%\* |
 | Left without being seen | 8.4 | 0.6 | −93% |
 | Seen after true CTAS target | 47.8 | 31.7 | −34% |
 
@@ -40,6 +40,12 @@ The improvements are calibrated to land in published ranges (rapid-assessment
 zones about 20–40%), not tuned to look dramatic. Results vary a lot by day:
 on the quietest days there is nothing to decide and the two EDs perform about
 the same.
+
+\* **Deteriorations are a trend, not a proven result.** Compared day by day
+(same patients in both EDs), the AI ED does better on 7 days, worse on 3 and
+ties on 2, which is not statistically significant over 12 days (sign test
+p ≈ 0.34). Under-triage (better on 12 of 12 days), average wait (10 of 12),
+4-hour breaches and walk-outs do hold up.
 
 ### What each decision is worth
 

@@ -138,7 +138,8 @@ Point at the tiles while you score each decision with the 12-day averages:
 >   average wait rises by 17 minutes and nearly 3 more patients a day
 >   deteriorate while waiting.
 > - **Who will need a bed:** requesting beds at triage frees about 22 hours of
->   bed time a day. Overall, deteriorations while waiting fall by about a third.
+>   bed time a day. Overall, deteriorations while waiting trend down by about
+>   a third, though over 12 days that isn't statistically significant yet.
 >
 > Together, average wait to physician drops from 68 to 32 minutes, and the
 > 90th percentile from about 3 hours to 74 minutes. On the quietest days it
@@ -231,7 +232,7 @@ walk-ins, 17:00–21:00), a multi-vehicle collision (8 ambulance patients at
 18:30) and a respiratory wave (12 extra patients, 12:00–24:00). The manual
 department's average wait rises to about 100 minutes in each; the AI
 department's to about 50. The relative gains hold (−47 to −52% average wait,
-−40 to −51% deteriorations), and the AI department is worse than manual on
+−40 to −51% deteriorations, not tested for significance), and the AI department is worse than manual on
 almost no day. Under the evening rush it starts to miss the 4-hour target too
 (about 2 walk-ins a day, against 22). To show it live, choose **Arrivals →
 Evening rush** with seed 8; the surge is shaded on the charts.
