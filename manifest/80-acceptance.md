@@ -60,16 +60,17 @@ over 12 days, with tolerances**, not on exact numbers.
 
 ## B. Triage evaluation (`eval-triage`, 4 per presentation = 120 patients)
 
-| Check | Reference (2026-11-01) | Accept if |
+| Check | Reference (2026-11-06, prompt `ctas-v2`) | Accept if |
 |---|---|---|
-| LLM (with escalation) exact CTAS match | 94% | ≥ 88% |
+| LLM (with escalation) exact CTAS match | 92% (primary only: 91%) | ≥ 88% |
 | LLM emergent misses (true 1–2 assigned ≥ 3) | 0 | 0 |
 | LLM subtle cases caught | 16 / 16 | ≥ 14 / 16 |
 | Rules exact match | 81% | 75–87% |
 | Nurse exact match | 75% | 65–85% |
-| Escalation rate | ~8% | 3–20% |
-| Rules fallbacks | 0 | ≤ 1 |
-| Admission prediction accuracy vs best possible | 77% vs 81% | within 10 points of best possible |
+| Escalation rate | ~9% (11 of 120) | 3–20% |
+| Rules fallbacks | 1 (a missing cache entry) | ≤ 1 |
+| Admission prediction accuracy vs best possible | 76% vs 81% | within 10 points of best possible |
+| Estimated live cost | ~$0.06/day at 150 patients | report it |
 
 ## C. Measured results (12 days)
 
