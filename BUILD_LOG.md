@@ -964,6 +964,15 @@ something to learn.
   one process listens on 8765 after a restart.
 - **The HEC sink retries once, then drops the batch** (counted as failed).
   Fine for a demo; production senders need disk buffering.
+- **Replay runs past 24 hours fall back to rules triage without telling the
+  UI.** Seeds are recorded only from opening to opening + 24 h. A run left
+  going continues with every new patient missing from the cache, and the
+  server logs `Claude triage failed ... offline and no cached response`.
+  This looks like an API error but no API call is made. Seen 2026-11-09: seed 3
+  left running reached Nov 17, with about 1,400 rules fallbacks from patient
+  M0000350 (Sat 14:07) onward. The demo is unaffected because it stops at
+  **Skip to end of day**. Fix options: pause replay runs automatically at the
+  end of the recorded window, or show a banner when fallbacks start.
 
 - Computer-use screen control lacks macOS Accessibility and Screen Recording permissions. Visual checks use headless Chrome on `/?snapshot` instead.
 - Start the dev server with `nohup`, not inside a background task.
