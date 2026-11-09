@@ -33,7 +33,8 @@ them against the SLI/SLO:
 | 6a | Deterioration investigation; early bed requests | Done |
 | 6b | 12-day validation, literature check, demo script, dry run | Done |
 | 6c | AI decisions panel; decision ablation; script rework; slide; README; surge presets | Done |
-| 7 | Event-pipeline integration (optional) | Not started |
+| 7 | Event-pipeline integration (optional) | Mostly done (AI-call observability open) |
+| 8 | Build manifest: rebuild from Markdown specs; clean-room rebuild | Done (MVP) |
 
 ---
 
@@ -707,6 +708,104 @@ needed a hard kill. (Known issue below.)
 
 ---
 
+## Day 5 — 2026-11-06 to 2026-11-09
+
+### Build manifest (`8ef40bb`, `28e0529`)
+
+A `manifest/` folder that specifies the whole system in Markdown, so it can
+be rebuilt by a coding agent instead of from the source code. The spec is
+the source; the code is one build of it.
+
+- **Files:** intent and SLO (`00`), architecture and decisions (`10`), data
+  and event contract (`20`), simulator (`30`), clinical catalog (`31`,
+  generated from the code), LLM triage service with the exact prompt (`40`),
+  web (`50`), operations (`60`), acceptance (`80`), and platform targets
+  (`targets/local.md`).
+- **One command:** `./manifest/build-it <empty-folder>` copies the manifest,
+  writes the target, and starts Claude Code with "build it".
+- **Acceptance is defined as tolerance bands, not exact values.** A rebuild
+  records its own LLM responses and uses its own random streams, so it can't
+  match to the decimal. The reference figures were updated for prompt
+  `ctas-v2` (92% exact match) in `28e0529`.
+
+### Significance check on the 12-day results (`6f6fa57`)
+
+Paired sign tests over the 12 recorded days, AI vs manual:
+
+| Measure | AI better / tied / worse | p |
+|---|---|---|
+| Under-triage | 12 / 0 / 0 | < 0.001 |
+| Average wait | 10 / 0 / 2 | 0.04 |
+| Walk-ins past 4 h | 6 / 6 / 0 | 0.03 |
+| Left without being seen | 6 / 6 / 0 | 0.03 |
+| Deteriorations | 7 / 2 / 3 | 0.34 |
+
+Removing the dynamic intake zone makes the AI ED worse on 11 of 12 days
+(p = 0.006). **Deteriorations are a trend, not a proven result**, so the
+README results table and `docs/DEMO_SCRIPT.md` now say so (footnote and
+spoken line).
+
+### Clean-room rebuild from the manifest (`24ade80`)
+
+The first end-to-end test of the manifest. A headless Claude Code session
+built the system in an empty folder from the manifest alone.
+
+**Isolation:**
+- A full backup of the demo database was taken first (`pg_dump`, verified
+  13,375 recorded responses).
+- The rebuild had its own target file (`targets/local-rebuild.md`), with its
+  own database and role on port 8001.
+- Deny rules blocked reading this repo and the backup, and running
+  `dropdb`/`dropuser`.
+- Isolation was checked with read-only privilege queries (the rebuild role
+  had no access to the demo database). An attempt to prove it destructively
+  was blocked by the auto-mode classifier, which was the right call.
+
+**Result: passed every acceptance check.**
+- 43 of 43 tests passed.
+- Seeds 3 and 8 replayed offline with identical scorecards and zero model calls.
+- No reference to, or read of, the original source appears in the rebuilt
+  code or the session logs.
+
+| Check | Reference | Rebuild | Tolerance |
+|---|---|---|---|
+| LLM exact CTAS match | 92% | 88.3% | ≥ 88% |
+| Emergencies missed | 0 | 0 | 0 |
+| Manual ED average wait (12 days) | 68.4 min | 60.3 min | 40–110 |
+| AI ED average wait | 32.0 min | 26.3 min | ≤ 70% of manual |
+| Walk-ins past 4 h, AI vs manual | 0 vs 12.1 | 0 vs 10.9 | ≤ 10% of manual |
+| Under-triaged, AI vs manual | 4.4 vs 24.2 | 3.8 vs 24.3 | ≤ 35% of manual |
+
+- **LLM accuracy passed by one patient.** On the rebuild, escalating to the
+  larger model gave one fewer exact match than the small model alone.
+- **The agent reported a bad day unprompted:** seed 3, a quiet day, where the
+  AI ED was slightly worse. That's the same pattern as the reference.
+- **Deteriorations came out better:** 9 better, 1 worse, 2 tied. It's still
+  not quoted as significant, because the reference build's 7/3/2 stands.
+- **Cost:** about $3.01 of API calls to record the evaluation and the 12
+  days, plus agent usage for two sessions. The first session hit the usage
+  limit and was resumed with `--continue`; all paid recording had finished
+  before the limit, so nothing was recorded twice.
+- **Cleanup:** the rebuild server, database and role were removed. The
+  rebuilt folder and its `ACCEPTANCE.md` are kept as evidence.
+- The manifest README now says "proven once, not yet routinely".
+
+### State
+
+- 36 tests passing in this repo; 43 in the rebuild. Pushed through `24ade80`.
+- API spend: the rebuild cost about $3.01, so the running total is about
+  $6.90.
+- All services stopped at the end of the day (web server and Postgres).
+  Restart with `brew services start postgresql@17`, then
+  `nohup uv run er-triage serve --port 8765 > var/server.log 2>&1 &`.
+
+**Next:**
+1. Timed rehearsals of the demo.
+2. Run the rebuild on every manifest change (CI), and add a second target.
+3. Phase 7: observability of AI calls from the event stream.
+
+---
+
 ## Lessons learned (running list)
 
 Things we would tell someone building a similar system. Each one cost us
@@ -803,6 +902,22 @@ something to learn.
     per sink. That one line exposed two events emitted after the bus had
     closed. (Days 3–4)
 
+22. **Test significance before you quote a difference.** Deteriorations
+    looked like a win (fewer on average), but over 12 paired days it was
+    7 better and 3 worse, p = 0.34. Report how many days an effect holds on,
+    and soften the claim when it isn't significant. (Day 5)
+23. **A spec is only proven by a rebuild.** The manifest was "complete" on
+    paper; a clean-room build from it, judged by acceptance bands, is what
+    showed it. Define "the same system" as behaviour within tolerances, not
+    identical code. (Day 5)
+24. **Isolate before you let an agent build.** Back up first, then give it a
+    separate database and role, a separate port, and deny rules on the
+    original. Prove isolation with read-only checks, not by trying to break
+    something. (Day 5)
+25. **Check the agent's auth before a headless run.** An `ANTHROPIC_API_KEY`
+    in the shell overrides the logged-in account and failed the first launch.
+    Unset it for the agent's process. (Day 5)
+
 ---
 
 ## Remaining work
@@ -832,6 +947,15 @@ something to learn.
 - [x] Route the HEC event stream through a pipeline platform (cloud free tier or local). Day 3: delivery verified.
 - [x] PHI masking, routing and filtering by destination, and volume/cost reduction. Day 4: 4 routes, 3 datasets, measured.
 - [ ] Observability of AI calls (latency, cost, escalations) from the event stream.
+
+### Phase 8: Build manifest
+
+- [x] Manifest with acceptance bands and a one-command `build-it` (day 5).
+- [x] Clean-room rebuild that passes acceptance (day 5).
+- [ ] Rebuild automatically on every manifest change (CI).
+- [ ] A second target (containers or a cloud service).
+- [ ] Next step, not built: a classic-ML admission predictor with calibrated
+      probabilities, in place of the LLM's admission flag.
 
 ### Known issues / notes
 
