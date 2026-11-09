@@ -72,7 +72,11 @@ Numbers in the specs that came from measurement say so, with the date.
   `80-acceptance.md`, not to the decimal.
 - **One target.** Only `targets/local.md` exists. Others (containers, a cloud
   service) are a new target file each.
-- **Not yet proven end to end.** The manifest was written from the working
-  system; a full clean-room rebuild against it is the next step.
+- **Proven once, not yet routinely.** One clean-room rebuild (2026-11-09:
+  an empty folder, no access to the original code or database) passed every
+  check in `80-acceptance.md`: 43 of 43 tests, every evaluation and 12-day
+  result inside its tolerance, and offline replay with no model calls. The
+  LLM exact-match check passed narrowly (88.3% against an 88% floor).
+  Rebuilding on every manifest change, in CI, is the next step.
 - **The LLM costs money once.** A fresh build has no recorded responses; the
   acceptance run records them (a few US dollars at list prices).
