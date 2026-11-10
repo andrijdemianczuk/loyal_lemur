@@ -790,6 +790,24 @@ built the system in an empty folder from the manifest alone.
   rebuilt folder and its `ACCEPTANCE.md` are kept as evidence.
 - The manifest README now says "proven once, not yet routinely".
 
+### 2026-11-09: event contract gap for "is it still working?"
+
+Reviewed what the event stream would need to detect a regression after an AI
+change (a before/after comparison of the decision mix). It isn't demoed, and
+no code changed today.
+
+- **Already on the stream:** each `triage.assessed` event carries the model,
+  the source, the CTAS level and the previous level (so raises above the
+  vital-sign rules show up), the rationale, red flags and the admission flag.
+- **Already in the build, offline only:** replay and the decision ablation
+  answer the same kind of question ("what changed when one thing changed?")
+  outside the pipeline.
+- **Gap:** `prompt_version` (`ctas-v2`) is stored with the replay cache
+  (`llm_responses`) but isn't on the `triage.assessed` event. A comparison
+  across prompt changes in the pipeline needs it there. It's a one-line
+  change in `src/er_triage/sim/ed.py`, deferred so the demo's event shape
+  stays fixed until the rehearsals are done.
+
 ### State
 
 - 36 tests passing in this repo; 43 in the rebuild. Pushed through `24ade80`.
@@ -947,6 +965,9 @@ something to learn.
 - [x] Route the HEC event stream through a pipeline platform (cloud free tier or local). Day 3: delivery verified.
 - [x] PHI masking, routing and filtering by destination, and volume/cost reduction. Day 4: 4 routes, 3 datasets, measured.
 - [ ] Observability of AI calls (latency, cost, escalations) from the event stream.
+- [ ] Add `prompt_version` to `triage.assessed` events, then a before/after
+      comparison of the decision mix per model and prompt version (regression
+      detection after an AI change).
 
 ### Phase 8: Build manifest
 
