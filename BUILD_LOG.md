@@ -872,6 +872,35 @@ A housekeeping day before the interviews. The demo's behaviour didn't change.
 
 ---
 
+## Day 7 — 2026-11-12
+
+Demo day for Arctiq. No code changes.
+
+### Demo server
+
+- Started Postgres and the server on 8765 from a local start-up checklist
+  (`var/startup_script.txt`, gitignored). The server log shows one run
+  started, paused and resumed through the dashboard.
+- Shut down with `pkill -f "er-triage serve"`. Both processes (the `uv`
+  wrapper and the Python server) exited on SIGTERM and the log shows a clean
+  shutdown, so the hard-kill problem from day 4 didn't occur this time.
+  Postgres stopped with `brew services stop postgresql@17`.
+- `pgrep -f uvicorn` doesn't find the server: the process is named
+  `er-triage serve`. Use that pattern to check whether it's running.
+
+### State
+
+- Tests not run today. Last count: 27 passing, 9 skipped (day 6).
+- All services stopped (web server and Postgres).
+
+**Next:**
+1. Cribl (Fri 2026-11-13): rehearse the 17-slide deck and the demo.
+2. Decide whether to add a ruff config to `pyproject.toml` and work through
+   the remaining 33 issues.
+3. Carry-overs from day 5: CI rebuild of the manifest, AI-call observability.
+
+---
+
 ## Lessons learned (running list)
 
 Things we would tell someone building a similar system. Each one cost us
