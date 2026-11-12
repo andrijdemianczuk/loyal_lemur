@@ -824,6 +824,54 @@ no code changed today.
 
 ---
 
+## Day 6 — 2026-11-11
+
+A housekeeping day before the interviews. The demo's behaviour didn't change.
+
+### Lint pass (`e14c6ee`)
+
+- The repo has no linter configured. Ran ruff through `uv tool run ruff`; it
+  picked up a rule set from a config outside the repo and reported 40 issues
+  in `src/` and `tests/`.
+- Applied only ruff's safe automatic fixes: import order in two test files,
+  and unquoted forward references in the `relationship()` hints in
+  `models.py`. Python 3.14 defers annotations, and `configure_mappers()`
+  confirmed SQLAlchemy still resolves `Patient.encounters` to `Encounter`.
+- Rejected one safe fix: ruff removed two `# noqa: E731` comments
+  (`ai/evaluate.py`, `sim/generator.py`) only because the outside config
+  doesn't enable E731. Kept them; any standard setup would flag those lines.
+- 33 issues left, all needing a judgment call (blind `except Exception:` in
+  the Postgres skip checks of three test files, `dict()` vs literals, and
+  others). Not fixed.
+
+### Tidy-up (`fb3880e`, `0b066cf`)
+
+- Renamed the PyCharm module from `loyal_lemur` to `er-triage`
+  (`.idea/er-triage.iml`, `modules.xml`).
+- Trailing newline on `.env.example`.
+
+### Demo server check
+
+- Started Postgres and the server on 8765 as the README describes. `/health`
+  reported database connected, API key configured, profile `pipeline-pitch`,
+  no events emitted yet. Shut both down afterwards. No run results recorded
+  in this log.
+
+### State
+
+- 27 tests passing, 9 skipped (Postgres was stopped during the test run).
+  Pushed through `0b066cf`.
+- API spend: none today. Running total still about $6.90.
+- All services stopped (web server and Postgres).
+
+**Next:**
+1. Timed rehearsals of the demo before Arctiq (Thu 2026-11-12).
+2. Decide whether to add a ruff config to `pyproject.toml` and work through
+   the remaining 33 issues.
+3. Carry-overs from day 5: CI rebuild of the manifest, AI-call observability.
+
+---
+
 ## Lessons learned (running list)
 
 Things we would tell someone building a similar system. Each one cost us
