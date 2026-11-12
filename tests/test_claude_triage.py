@@ -3,7 +3,12 @@
 import time
 from datetime import UTC, datetime
 
-from er_triage.ai.claude_triage import ClaudeTriage, ClaudeTriager, _Call, patient_prompt
+from er_triage.ai.claude_triage import (
+    ClaudeTriage,
+    ClaudeTriager,
+    _Call,
+    patient_prompt,
+)
 from er_triage.models import AssessmentSource
 from er_triage.sim.generator import PatientGenerator, Vitals
 

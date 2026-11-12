@@ -118,7 +118,7 @@ class Patient(Base):
     true_ctas: Mapped[int] = _ctas()
     fragility: Mapped[float]  # latent deterioration threshold
 
-    encounters: Mapped[list["Encounter"]] = relationship(back_populates="patient")
+    encounters: Mapped[list[Encounter]] = relationship(back_populates="patient")
 
     __table_args__ = (
         UniqueConstraint("run_id", "mrn"),
@@ -156,8 +156,8 @@ class Encounter(Base):
     deteriorated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
     patient: Mapped[Patient] = relationship(back_populates="encounters")
-    vitals: Mapped[list["VitalSigns"]] = relationship(back_populates="encounter")
-    assessments: Mapped[list["TriageAssessment"]] = relationship(back_populates="encounter")
+    vitals: Mapped[list[VitalSigns]] = relationship(back_populates="encounter")
+    assessments: Mapped[list[TriageAssessment]] = relationship(back_populates="encounter")
 
     __table_args__ = (
         UniqueConstraint("patient_id", "arm"),

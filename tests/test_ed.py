@@ -17,8 +17,8 @@ from er_triage.models import (
 )
 from er_triage.sim.ed import DECISIONS, EDConfig
 from er_triage.sim.feed import FeedEngine
-from er_triage.sim.triage import RulesTriager, vitals_level
 from er_triage.sim.generator import Vitals
+from er_triage.sim.triage import RulesTriager, vitals_level
 
 START = datetime(2026, 11, 6, 8, 0, tzinfo=UTC)
 
